@@ -1,0 +1,44 @@
+"""
+数据库初始化 — 系统启动时自动执行
+1. 启用 pgvector 扩展（语义搜索需要）
+2. 创建所有数据库表
+3. 如果没有 Admin 用户，创建默认 Admin（David）
+"""
+
+from sqlalchemy import text
+
+from app.core.database import engine, async_session, Base
+from app.models import User, UserRole  # 导入所有模型，确保表结构被注册
+from app.core.security import hash_password
+
+
+async def init_db():
+    """初始化数据库：建表 + 创建默认 Admin"""
+    async with engine.begin() as conn:
+        # 启用 pgvector 扩展
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # 创建所有表（已存在的表不会重复创建）
+        await conn.run_sync(Base.metadata.create_all)
+
+    # 创建默认 Admin 用户（如果还没有的话）
+    async with async_session() as session:
+        from sqlalchemy import select
+        result = await session.execute(
+            select(User).where(User.role == UserRole.ADMIN)
+        )
+        admin = result.scalar_one_or_none()
+
+        if admin is None:
+            # 第一次启动，创建 David 的 Admin 账号
+            admin = User(
+                email="admin@amazonsolutions.us",
+                hashed_password=hash_password("admin123"),  # 首次登录后请改密码！
+                full_name="David Zheng",
+                role=UserRole.ADMIN,
+                is_active=True,
+            )
+            session.add(admin)
+            await session.commit()
+            print("✅ 默认 Admin 账号已创建: admin@amazonsolutions.us / admin123")
+        else:
+            print("✅ Admin 账号已存在，跳过创建")

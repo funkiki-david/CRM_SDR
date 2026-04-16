@@ -1,0 +1,74 @@
+# === SDR ProCRM — Docker Compose 服务编排 ===
+# 启动命令：docker compose up
+# 停止命令：docker compose down
+# 重新构建：docker compose up --build
+
+services:
+  # --- PostgreSQL 数据库（含 pgvector 向量搜索扩展）---
+  db:
+    image: pgvector/pgvector:pg16  # 预装了 pgvector 的 PostgreSQL 16
+    container_name: sdrcrm-db
+    environment:
+      POSTGRES_USER: sdrcrm
+      POSTGRES_PASSWORD: sdrcrm_dev
+      POSTGRES_DB: sdrcrm
+    ports:
+      - "5432:5432"   # 本地 5432 端口可连数据库
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # 数据持久化，重启不丢
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdrcrm"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- Redis 缓存 + 任务队列 ---
+  redis:
+    image: redis:7-alpine
+    container_name: sdrcrm-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- Python FastAPI 后端 ---
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sdrcrm-backend
+    ports:
+      - "8000:8000"   # 后端 API 地址：http://localhost:8000
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sdrcrm:sdrcrm_dev@db:5432/sdrcrm
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: dev-only-change-in-production-abc123xyz
+    volumes:
+      - ./backend:/app   # 代码变动自动生效（热更新）
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # --- Next.js 前端 ---
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sdrcrm-frontend
+    ports:
+      - "3000:3000"   # 前端地址：http://localhost:3000
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000  # 前端调后端的地址
+    volumes:
+      - ./frontend/src:/app/src   # 前端代码热更新
+    depends_on:
+      - backend
+
+# 数据卷 — 数据库数据持久存储
+volumes:
+  pgdata:

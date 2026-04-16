@@ -1,0 +1,36 @@
+# === SDR ProCRM 后端依赖 ===
+
+# Web 框架
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+
+# 数据库 ORM + 驱动
+sqlalchemy==2.0.40
+asyncpg==0.30.0          # PostgreSQL 异步驱动
+alembic==1.15.2          # 数据库迁移工具
+
+# 认证 & 安全
+python-jose[cryptography]==3.4.0   # JWT token 生成/验证
+passlib[bcrypt]==1.7.4             # 密码哈希
+bcrypt==4.0.1                      # 锁定版本，兼容 passlib
+python-multipart==0.0.20           # 表单解析（登录需要）
+
+# 数据验证
+pydantic==2.11.1
+pydantic-settings==2.8.1  # 从环境变量读配置
+email-validator==2.2.0
+
+# 向量数据库（语义搜索用）
+pgvector==0.3.6
+
+# Redis 缓存
+redis==5.3.0
+
+# HTTP 客户端（调 Apollo API 等外部服务）
+httpx==0.28.1
+
+# 环境变量
+python-dotenv==1.1.0
+
+# SQLAlchemy 异步支持
+greenlet==3.2.5

@@ -1,0 +1,23 @@
+# === 环境变量（含密钥，绝对不能上传）===
+.env
+backend/.env
+.env.local
+.env.production
+
+# === Python ===
+__pycache__/
+*.pyc
+.venv/
+
+# === Node.js ===
+node_modules/
+frontend/.next/
+
+# === Docker ===
+pgdata/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+.DS_Store
