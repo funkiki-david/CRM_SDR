@@ -1,27 +1,610 @@
-# SDR ProCRM — Pending Optimizations & TODOs
+# SDR ProCRM — 优化待办清单（Optimization Backlog）
 
-## Deployment
+> **用途**: 这是 Claude Code 可以随时读取并批量执行的优化清单。
+> **使用方法**: 任何时候在 Claude Code 里说 "读取 `docs/OPTIMIZATIONS.md`，按优先级帮我处理里面的事项"，它会按顺序逐条执行。
+> **维护**: David 随时可以往这个文件里加新条目；每完成一条就在前面打 `[x]`，让 Claude Code 跳过。
+> **最后更新**: 2026-04-16 (部署策略更新：改为 Railway 单平台方案)
 
-- [ ] **Supabase cloud database migration** — Connect to Supabase PostgreSQL for production. Local `.env` `DATABASE_URL` needs to be updated with the correct Supabase Session mode connection string (`postgresql+asyncpg://...`). The "Tenant or user not found" error was likely a Session vs Transaction mode issue. Revisit when ready to deploy.
-- [ ] Deploy backend to Railway
-- [ ] Deploy frontend to Vercel
-- [ ] Configure custom domain `crm.amazonsolutions.us`
-- [ ] Set up Upstash Redis for production cache
+---
 
-## Email System
+## 🆕 部署策略重大变更（2026-04-16）
 
-- [ ] Gmail OAuth integration (actual sending via Gmail API)
-- [ ] Email open/click tracking (pixel tracking)
-- [ ] Inbox sync (auto-import replies to activity timeline)
+**原方案**: Vercel（前端）+ Railway（后端）+ Supabase（数据库）+ Upstash（Redis）· 四平台组合
 
-## AI Features
+**新方案**: **Railway 单平台一站式部署** — 前端、后端、PostgreSQL+pgvector、Redis 全部在 Railway
 
-- [ ] AI voice parsing with Whisper (auto-extract contact, type, follow-up date from speech)
-- [ ] Similar customer discovery (on new lead import, find most similar closed-won contacts)
-- [ ] Auto-generate reports on Apollo import (batch)
+**变更原因**:
+1. 开发阶段 Supabase 密码格式问题卡了 1+ 小时，预示多平台组合的集成复杂度超出非技术创始人可接受范围
+2. Railway 2026 年公认最适合新手（Startupik 评测）
+3. 一个账号、一份账单、一处排查 — 大幅降低运维负担
+4. 将来要升级很简单（Railway → Render 或 → Vercel+Railway 组合只需几小时）
 
-## Security
+**已完成的 Supabase 设置**（项目已创建、pgvector 已启用）暂时保留，不销毁。未来如果需要专业向量数据库可以迁回。
 
-- [ ] Change default admin password mechanism (force change on first login)
-- [ ] Encrypt OAuth tokens at rest in database
-- [ ] Rate limiting on auth endpoints
+---
+
+当 David 要求处理这个文件时，请按以下原则：
+
+1. **从上往下按优先级处理** — P0 必须先做，P2 可以放到最后
+2. **每做完一个大项停下来让 David 确认** — 不要一口气全部做完
+3. **做完一项就把 `[ ]` 改成 `[x]`** 并写下完成日期
+4. **遇到需要 David 决定的事项（如 OAuth 凭证、API Key、文案）要停下来问**
+5. **保持代码风格和现有项目一致** — 不要引入新的框架或重构
+6. **做完后跑一遍相关功能的测试，确保没破坏已有功能**
+
+---
+
+## 🔴 P0 — 阻塞发布，必须先处理
+
+### [ ] 0a. 数据库自动备份机制（Day 6 复盘新增 · 数据安全）
+
+**问题**: 现在所有数据都在 MacBook 的 Docker 里。如果电脑丢了、硬盘坏了、Docker 容器被误删——所有客户数据、活动记录、研究报告**全部消失**，不可恢复。
+
+**要做的**:
+- 写一个 bash 脚本每天凌晨自动执行 `pg_dump` 导出数据库
+- 备份文件存到 `~/CRM_SDR/backups/` 目录，按日期命名（如 `backup-2026-04-15.sql.gz`）
+- 只保留最近 30 天，超过的自动删除
+- 加到 macOS 的 `launchd` 或 `cron` 定时任务里
+- （可选）集成 Google Drive API 自动上传备份到云端
+- Settings 页面加「立即备份」按钮 + 显示最近备份时间
+
+**验收标准**: 跑一次脚本，看到新的备份文件；隔一天看到第二个文件；模拟删除数据库后能从备份恢复。
+
+---
+
+### [ ] 0b. 测试数据 vs 真实数据隔离（Day 6 复盘新增）
+
+**问题**: 开发时用的是测试数据（John Smith, Sarah Lee 等）。真实使用后，这些假数据会跟真实客户混在一起，管理员很难区分。
+
+**要做的**:
+- 给所有数据加 `is_test_data` 字段
+- 开发时用脚本批量生成的测试数据都标记为 true
+- Settings 页面加「清空测试数据」按钮（Admin 权限）
+- 弹窗二次确认，显示将删除多少条记录
+- 执行前自动备份，给出恢复链接
+
+**验收标准**: 真实使用前点一下按钮，所有 John Smith / Sarah Lee / TechCorp 等测试数据清空，只保留系统必要数据（如邮件模板）。
+
+---
+
+### [ ] 0c. GDPR 合规：数据导出 &amp; 删除（Day 6 复盘新增 · 法律要求）
+
+**问题**: 未来给团队用或卖给客户后，如果有 SDR 离职或客户要求"忘记我"，必须能导出该人的所有相关数据或彻底删除。这是 GDPR/CCPA 等法律强制要求，违反会被罚款。
+
+**要做的**:
+- 联系人详情页加「导出该联系人全部数据」按钮（JSON 格式下载，包含所有活动、邮件、AI 报告）
+- 加「永久删除并清除所有痕迹」按钮（Admin 权限，二次确认）
+- 删除时真正 `DELETE`（不是软删除），包括关联的活动、邮件记录、向量 embedding
+- 记录删除操作到审计日志（谁在什么时候删了谁）
+
+**验收标准**: 随便选个联系人，能下载到他的完整 JSON 档案；点永久删除后搜索该人，所有地方都找不到。
+
+---
+
+### [ ] 1. API Key 加密存储（安全紧急）
+
+**问题**: 当前用户在 Settings 输入的 Anthropic 和 OpenAI API Key 如果是明文存在数据库里，一旦数据库泄露（拖库、备份暴露、内部人员），攻击者可以用你的 Key 疯狂刷费用。这些 Key 是能直接产生金钱损失的资产。
+
+**要做的**:
+- 用 Python `cryptography` 库的 Fernet 做对称加密
+- 主密钥（MASTER_KEY）存在环境变量里，不进数据库
+- 数据库字段存加密后的密文
+- 每次使用时解密到内存，不存磁盘缓存
+- Settings 界面永远只显示 `sk-...xxxx` 这样的掩码，不显示完整 Key
+- 提供「Rotate Key」按钮让用户随时换新
+
+**验收标准**: 直接查数据库 `SELECT api_key FROM users` 看到的是一串乱码，不是可用的 Key。
+
+---
+
+### [ ] 2. AI 成本上限保护（防炸账单）
+
+**问题**: 目前 OpenAI Embedding 和 Claude API 调用没有任何花费上限。一个 bug 或失控循环就能一晚上烧几百美元。非技术开发者最容易中招。
+
+**要做的**:
+- 在 `.env` 或 Settings 定义每日 / 每月预算上限（如 $5/天、$100/月）
+- 每次调用 AI API 前先查今日累计花费
+- 到达 80% 阈值时发邮件警告 David
+- 到达 100% 立即熔断，所有 AI 功能返回友好错误
+- Dashboard 右上角显示「Today: $2.30 / $5.00」
+- 后台任务循环每小时检查一次，异常高花费立即停止并通知
+
+**验收标准**: 手动把预算设为 $0.10，调用几次 Claude API 后系统自动停止并显示警告。
+
+---
+
+### [ ] 3. AI 幻觉警告标签（防错误信息误导）
+
+**问题**: Claude 和 GPT 会编造真实人物的信息（例如凭空说某人在某公司工作过）。SDR 拿这些信息去 cold call 会很尴尬甚至损害公司信誉。
+
+**要做的**:
+- 所有 AI 生成内容（研究报告、邮件草稿、搜索摘要）显眼标注
+  - 黄色背景条：「⚠️ AI 生成 · 请核实事实」
+- 研究报告里的具体事实（日期、公司、职位）加上「来源不明」标签
+- Prompt 里明确要求 Claude：「如果不确定某个事实，明确说不确定，不要编造」
+- 所有生成的报告在数据库记录时戳 + 模型版本，方便追溯
+- 加「Mark as Verified」按钮让 SDR 人工核实后去掉警告标签
+
+**验收标准**: 生成一份研究报告，顶部清晰看到 AI 警告横幅；Prompt 测试时让 AI 回答它不知道的事情，它会说"不确定"而不是编造。
+
+---
+
+### [ ] 4. Gmail OAuth 真实发送集成
+
+**问题**: 当前 Send Email 按钮只把邮件记录到活动时间线，没有真的发出去。这是 SDR 工具的核心功能，不能模拟。
+
+**要做的**:
+- 指导 David 在 Google Cloud Console 创建 OAuth 2.0 客户端凭证
+- 在 Settings 页加「连接 Gmail 账号」按钮，走完整 OAuth 授权流程
+- 存储 access token + refresh token 到数据库（加密）
+- Send Email 真实调用 Gmail API `users.messages.send` 投递
+- 支持 token 自动刷新
+- 失败时在 UI 显示清晰错误（不是后台默默失败）
+
+**验收标准**: 从 David 的邮箱发一封测试邮件到另一个邮箱，实际收到。
+
+---
+
+### [ ] 5. 邮件打开追踪（Open Tracking）
+
+**问题**: 发出去的邮件不知道有没有被打开，SDR 像在黑箱里工作。
+
+**要做的**:
+- 在发送邮件时，在 HTML 正文末尾嵌入一个 1x1 透明像素图
+- 像素图 URL 指向后端 `/api/tracking/open/{email_id}`
+- 后端记录：打开时间、打开次数、IP（用于去重）
+- 活动时间线显示「Opened 2x · first opened 3 mins ago」
+- 联系人详情页显示该联系人的总邮件打开率
+
+**验收标准**: 发邮件给自己，打开邮件后刷新 CRM，时间线出现 Opened 记录。
+
+---
+
+### [ ] 6. 邮件链接点击追踪（Click Tracking）
+
+**问题**: 打开了邮件不代表感兴趣，点击链接才是真信号。
+
+**要做的**:
+- 发送前自动扫描邮件正文的所有 `<a href>` 链接
+- 用后端代理 URL 包装：`/api/tracking/click/{email_id}/{encoded_url}`
+- 用户点击时：后端记录 → 302 重定向到原始 URL
+- 活动时间线显示「Clicked: [原链接文字]」
+- 多个链接分别记录点击
+
+**验收标准**: 发一封带链接的邮件，点击后时间线出现 Clicked 记录。
+
+---
+
+### [ ] 7. AI 个性化改写按钮
+
+**问题**: 当前模板只是静态变量替换，没有真正的 AI 个性化。这是 SDR ProCRM 的差异化核心功能。
+
+**要做的**:
+- 在 Send Email 弹窗选完模板后，增加「Personalize with AI」按钮
+- 点击后调 Claude API（sonnet-4-6），传入：
+  - 联系人姓名、职位、公司、行业标签
+  - 联系人的 LinkedIn bio（如果有）
+  - 最近 3 条活动记录摘要
+  - 当前模板内容
+- Prompt 要求 Claude 改写邮件的**前两句**，让它针对这个具体的人
+- 保留后续的 CTA 和模板结构不变
+- UI 显示 loading 动画（1-3 秒）
+- 给 David 一个 "Undo" 按钮恢复原始模板
+
+**验收标准**: 选中某个有完整资料的联系人，点 Personalize，AI 给出的开头明显贴合这个人。
+
+---
+
+## 🟡 P1 — 体验优化，做完 P0 后处理
+
+### [ ] 7a. 系统健康监控页面（Day 6 复盘新增）
+
+**问题**: 现在无法知道系统是否正常，除非打开每个页面点一遍。
+
+**要做的**:
+- 新建 `/health` 页面（只有 Admin 能看）
+- 显示各组件实时状态：
+  - PostgreSQL 连接：✓ / ✗
+  - Redis 连接：✓ / ✗
+  - Claude API：✓ / ✗（状态码 + 响应时间）
+  - OpenAI API：✓ / ✗
+  - Gmail API（如已连接）：✓ / ✗
+- 显示关键指标：今日 API 调用次数、错误率、最慢端点
+- 后端提供 `/api/health` JSON 接口，方便未来接监控工具
+
+---
+
+### [ ] 7b. 错误日志集中收集（Day 6 复盘新增）
+
+**问题**: 前后端报错散在各处，出问题时很难追查。
+
+**要做的**:
+- 后端所有 exception 记录到数据库 `error_logs` 表
+- 字段：时间、用户 ID、接口路径、错误类型、堆栈、请求参数（脱敏）
+- 前端所有 JavaScript 错误通过 `window.onerror` 发送到后端
+- Settings 页加「系统日志」标签（Admin 可见），能按时间筛选
+- 或者直接接入 Sentry 免费版自动收集（推荐，省事）
+
+---
+
+### [ ] 7c. API Key 可用性自检（Day 6 复盘新增）
+
+**问题**: 用户在 Settings 填 Key 后，不知道有没有效。
+
+**要做的**:
+- 保存 Key 时自动调一次轻量测试请求
+- Anthropic: 发一条 hello 看返回
+- OpenAI: 请求 embedding 一小段文本看返回
+- 成功显示 "✓ Key 有效"（如果 API 支持，还能显示余额）
+- 失败显示具体错误（Key 错 / 额度不足 / 网络问题）
+- UI 上每个 Key 旁边加绿点/红点表示当前状态
+
+---
+
+### [ ] 7d. 用户操作审计日志（Day 6 复盘新增）
+
+**问题**: 三级权限有了，但谁做了什么没记录。多人协作时出问题没法追溯。
+
+**要做的**:
+- 新建 `audit_logs` 表，记录：时间 / 用户 / 操作（create/update/delete） / 对象类型 / 对象 ID / 改动详情（JSON diff）
+- 所有增删改操作自动写入
+- Admin 页面加「审计日志」查看器，能按用户/时间/操作类型筛选
+- 敏感操作（删除联系人、导出数据、改权限）额外高亮
+
+---
+
+### [ ] 8. AI 研究报告缓存机制
+
+**问题**: 每次打开联系人详情都重新生成研究报告会重复烧钱。同一个人一次生成后应该复用。
+
+**要做的**:
+- 数据库新增字段存储已生成的研究报告 + 生成时间戳
+- 打开联系人详情时优先读缓存
+- 报告超过 30 天自动标记「可能过时」
+- 加「Regenerate」按钮让用户主动刷新
+- 批量生成时先过滤已有缓存的联系人
+
+---
+
+### [ ] 9. AI 研究报告数据源增强
+
+**问题**: 只传 Apollo 基础字段给 AI，它只能靠猜测写报告，质量不高。
+
+**要做的**:
+- 导入联系人时抓取公司官网首页 + About 页文本
+- 用 web_search 工具查询 "{company name} recent news" 拿最近 3 条新闻
+- 把这些原始材料喂给 Claude，让它基于真实数据写报告
+- 报告底部列出「参考资料」链接，方便 SDR 追溯
+
+---
+
+### [ ] 10. AI Draft 结合现有模板
+
+**问题**: 当前 AI Draft 可能是从零写邮件，风格不稳定。
+
+**要做的**:
+- AI Draft 按钮打开时先让用户选一个模板作为"骨架"
+- Claude 只改写前两句开场 + 结尾 CTA
+- 保留模板中间的价值主张和签名
+- 生成结果显示「原模板 vs AI 改写版」对比，让用户选
+
+---
+
+### [ ] 11. 语义搜索结果可操作
+
+**问题**: 搜到结果只能看不能用，打断工作流。
+
+**要做的**:
+- 每条搜索结果加快捷操作：「查看联系人」「发邮件」「加标签」
+- 支持多选结果批量操作（如批量发跟进邮件）
+- 搜索结果按时间 / 相关度 / 联系人排序
+- 搜索历史记录保存，方便重复查询
+
+---
+
+### [ ] 12. AI 研究报告自动生成触发
+
+**问题**: 手动点 Generate 按钮用户不会记得用。
+
+**要做的**:
+- Apollo 导入联系人后台自动排队生成报告
+- 队列串行执行避免并发烧钱
+- 用户打开详情页时报告已经好了
+- Settings 里加开关，允许用户关闭自动生成
+
+---
+
+### [ ] 13. 相似客户发现功能
+
+**问题**: 规划里的"新 lead 自动找相似已成交客户"还没实现，向量搜索基建已经在了。
+
+**要做的**:
+- 新 lead 导入时用其资料生成 embedding
+- 搜索历史成交客户（stage=closed_won）的 embedding
+- 取 top 3 相似度最高的
+- 在 lead 详情页顶部显示「Similar closed deals」卡片
+- 点击能看到当时是怎么成交的（活动记录）
+
+---
+
+### [ ] 14. 发送前邮件预览面板
+
+**问题**: 编辑器里显示 `{{first_name}}` 等原始变量，看不到最终效果。
+
+**要做的**:
+- Send Email 弹窗增加「Preview」标签页
+- 切换到 Preview 后显示收件人实际会看到的样子
+- 所有 `{{变量}}` 已替换成真实数据
+- 邮件顶部显示「From: [SDR 邮箱]」「To: [联系人邮箱]」
+- HTML 渲染完整邮件，包括签名
+
+---
+
+### [ ] 15. 批量发送功能（Bulk Send）
+
+**问题**: SDR 真实工作流是"同一个模板发给 20 个人，每个人都 AI 个性化"，一个一个点太慢。
+
+**要做的**:
+- Contacts 列表页支持多选（Checkbox）
+- 多选后出现「Bulk Send Email」按钮
+- 弹窗选模板 + 批量 AI 个性化
+- 显示进度条："正在处理 5 / 20"
+- 每封邮件间隔 2-5 秒随机发送（避免触发 Gmail 反垃圾）
+- 发送后汇总报告："成功 18，失败 2（查看错误）"
+
+---
+
+### [ ] 16. 每日发送数量限制警告
+
+**问题**: Gmail 免费账号每天限制 500 封，Workspace 限制 2000 封。没有提醒会突然被封。
+
+**要做的**:
+- 顶部导航栏显示「Today: 247 / 500 sent」
+- 到达 80% 时变黄色警告
+- 到达 95% 时变红色并弹窗
+- 达到上限后 Send 按钮禁用，显示「今日限额已满，明天再发」
+- 按邮箱账号单独计数（每个 Gmail 账号独立上限）
+
+---
+
+### [ ] 17. 撤销发送窗口（30 秒 Undo）
+
+**问题**: 写错、发错人、附件忘了加——SDR 永远会遇到这种事。
+
+**要做的**:
+- Send 按钮点击后不立刻发送，先进入 30 秒延迟队列
+- UI 底部显示「Email sending in 30s... [Undo]」
+- 30 秒内点 Undo 取消发送
+- 30 秒后自动投递 Gmail API
+- 如果 David 关闭浏览器，仍然在后台发送
+
+---
+
+### [ ] 18. CAN-SPAM 合规：自动附加取消订阅链接
+
+**问题**: 美国反垃圾邮件法要求商业邮件必须有取消订阅链接，否则会被罚款。
+
+**要做的**:
+- 所有邮件底部自动附加可配置的 Footer
+- Footer 内容: 公司地址 + 取消订阅链接
+- 取消订阅链接指向 `/unsubscribe/{contact_token}`
+- 点击后该联系人标记为 `unsubscribed = true`
+- 之后任何发给该联系人的邮件自动拦截
+- 在 Settings 里让 David 自定义 Footer 文案和公司地址
+
+---
+
+## 🔵 P2 — 高级功能，稳定后处理
+
+### [ ] 18a. 新用户引导流程（Day 6 复盘新增 · Onboarding）
+
+**问题**: 新 SDR 进来用这个系统时，会不知道从哪开始。
+
+**要做的**:
+- 首次登录后弹出 Onboarding 向导
+- 5 个步骤：
+  1. 欢迎视频（2 分钟演示核心流程）
+  2. 导入第一批联系人（指引用户去 Finder 页面）
+  3. 发第一封邮件（引导完成完整流程）
+  4. 配置个人 Gmail（OAuth）
+  5. 设置个人签名和邮件发送偏好
+- 每步可跳过，完成后 Settings 里仍可重看
+- 用户个人页显示完成进度
+
+---
+
+### [ ] 18b. 内置产品使用指南（Day 6 复盘新增）
+
+**问题**: 每次有新功能，都要你手动教新员工怎么用。
+
+**要做的**:
+- 每个页面右上角加 `?` 图标
+- 点开显示该页面功能的分点说明 + GIF 演示
+- 每个关键按钮旁边加小 `?` tooltip 说明用途
+- 可选：集成 Intro.js 做交互式引导（第一次点进某页时高亮关键元素）
+
+---
+
+### [ ] 18c. Demo 模式（Day 6 复盘新增）
+
+**问题**: 给客户/投资人演示时，要么用真数据（不安全），要么手动处理截图（麻烦）。
+
+**要做的**:
+- 顶部导航加「Demo 模式」开关（仅 Admin 可见）
+- 开启后所有数据在前端展示时自动脱敏：
+  - 姓名 → 首字母（John Smith → J.S.）
+  - 公司 → 行业 + 编号（Acme Corp → Tech Company #1）
+  - 邮箱 → 脱敏（john@acme.com → j***@a***.com）
+  - 电话 → 脱敏（xxx-xxx-1234）
+- 开关状态存本地 localStorage，关掉页面记忆设置
+- 适合录演示视频、开会投屏
+
+---
+
+### [ ] 18d. 多租户架构准备（Day 6 复盘新增 · Business）
+
+**问题**: 如果以后作为 SaaS 卖给其他公司，现在的单团队架构要重构，非常痛。
+
+**要做的**:
+- 现在就加 `organization_id` 字段到所有表
+- 暂时只用一个默认 Organization，所有现有数据归属它
+- 所有查询自动加 `WHERE organization_id = current_org`
+- 创建联系人/活动/模板时自动填入
+- 将来开通 SaaS 时只要加注册流程，架构不用动
+
+---
+
+### [ ] 18e. 计量埋点（Day 6 复盘新增 · Business）
+
+**问题**: 如果未来按"发邮件条数""AI 生成次数""联系人数量"收费，现在不埋点以后没数据。
+
+**要做的**:
+- 新建 `usage_events` 表，记录每次计费相关操作
+- 事件类型：email_sent / ai_research_generated / ai_email_drafted / contact_imported / embedding_created
+- 每条记录用户 ID、时间、消耗量（如 tokens 数）、成本
+- Admin Dashboard 加「使用量」标签，按日/周/月聚合查看
+- 未来加 Stripe 收费时直接接这个数据
+
+---
+
+### [ ] 18f. 邀请链接系统（Day 6 复盘新增）
+
+**问题**: 加新 SDR 进团队需要 Admin 手动创建账号，麻烦。
+
+**要做的**:
+- Admin 页面「邀请成员」按钮
+- 输入邮箱 + 选角色（SDR/Manager） → 生成带 token 的邀请链接
+- 发邮件给对方（用系统的 Gmail 集成）
+- 对方点链接到注册页，token 验证通过自动加入团队
+- 邀请链接 7 天过期
+- 未使用的邀请可撤销
+
+---
+
+### [ ] 19. AI 功能使用统计面板
+
+**问题**: 没有数据证明 AI 投入值不值得。
+
+**要做的**:
+- Reports 页新增「AI Analytics」标签
+- 显示：本月 AI 花费、各功能调用次数、AI 邮件 vs 非 AI 邮件的打开率对比
+- AI 研究报告覆盖率：多少联系人已生成报告
+- 语义搜索使用频率 + 热门查询词
+- 按 SDR 分组看谁用得多
+
+---
+
+### [ ] 20. Prompt 模板化管理
+
+**问题**: AI 研究报告、AI 邮件的 prompt 写死在代码里，改起来要重新部署。
+
+**要做的**:
+- Settings 新增「AI Prompts」标签
+- 每个 AI 功能（研究报告、邮件起草、相似客户）有可编辑的 prompt 模板
+- 支持变量占位符 `{{contact_name}}` `{{company}}` `{{activity_history}}`
+- 版本控制：改动前自动备份旧版
+- 内置「恢复默认」按钮
+
+---
+
+### [ ] 21. 本地模型降级方案
+
+**问题**: Anthropic API 挂了或预算用完，整个 AI 功能瘫痪。
+
+**要做的**:
+- 配置备用模型层级：Claude Sonnet → Claude Haiku（便宜）→ 本地 Ollama → 关闭
+- 检测主模型失败自动降级
+- UI 显示「当前使用备用模型」警告
+- 用户可在 Settings 设定降级策略
+
+---
+
+### [ ] 22. 邮件序列 / Drip Campaign
+
+**问题**: 真正的 SDR 工具要支持自动化序列（Day 1 发初邮件 → 没回的 Day 3 发 Follow-up → 还没回 Day 7 再发）。
+
+**要做的**:
+- 新建页面 `/sequences` 管理邮件序列
+- 每个序列定义：触发条件 + 多步骤 + 每步间隔
+- 后台定时任务扫描所有 enrolled 联系人
+- 到时间自动发下一步
+- 对方回复后自动停止该联系人的序列
+- UI 可视化显示序列进度
+
+---
+
+### [ ] 23. 自动回信检测 + 智能归档
+
+**问题**: 客户回邮件后需要自动出现在活动时间线，不是 SDR 手动录入。
+
+**要做的**:
+- 用 Gmail Watch API 订阅邮箱的收件事件
+- 后端接收推送，解析邮件头部的 Message-ID 关联到原始发送记录
+- 回信内容自动保存到该联系人的活动时间线
+- 用 Claude API 给回信打标签：「感兴趣」「拒绝」「需要 Follow-up」「不在」
+- 感兴趣的回信在首页高亮提醒
+
+---
+
+### [ ] 24. 邮件热力图分析
+
+**问题**: 发邮件最佳时间因人而异，需要数据驱动。
+
+**要做的**:
+- Reports 页面新增「邮件时段分析」
+- 横轴：一周七天；纵轴：一天 24 小时
+- 颜色深浅 = 该时段历史打开率
+- 帮 SDR 决定下一批邮件什么时候发
+
+---
+
+## 🟢 P3 — 打磨细节，随手加
+
+### [ ] 25. 附件支持
+支持在邮件里添加附件（PDF 报价单等），Gmail API 发送时带 attachment。
+
+### [ ] 25a. 每日开发日志 CHANGELOG（Day 6 复盘新增）
+每次 Claude Code 做完一批功能，自动在 `CHANGELOG.md` 记录日期 + 新增/改动/修复的事项。3 个月后能追溯每个功能什么时候加的。让 Claude Code 每次完成重大任务自觉更新。
+
+### [ ] 25b. 环境变量说明文档（Day 6 复盘新增）
+创建 `backend/.env.example` 和 `docs/ENV-VARIABLES.md`，解释每个环境变量用途、怎么获取、生产环境值示例。新开发者（包括未来的你）上手不用猜。
+
+### [ ] 26. 邮件签名管理
+Settings 里可以为每个绑定的 Gmail 配置不同签名，发送时自动插入。
+
+### [ ] 27. 模板 A/B 测试
+同一个模板两个版本，随机发送，统计哪个回复率更高。
+
+### [ ] 28. 模板变量增强
+除了 `{{first_name}}` 这种基础变量，支持条件变量如 `{{#if title contains "VP"}}...{{/if}}`。
+
+### [ ] 29. 邮件线程视图
+联系人详情页把跟该联系人的所有邮件按时间线显示成 Gmail 那种 thread 形式。
+
+### [ ] 30. Draft 草稿自动保存
+写到一半关闭弹窗不丢，下次打开自动恢复。
+
+---
+
+## 📝 已完成事项（Claude Code 请不要重复做）
+
+<!-- 完成的事项会从上面移到这里 -->
+
+*（暂无）*
+
+---
+
+## 🚫 明确不做的事情
+
+为避免范围蔓延（scope creep），以下功能**明确不放在本 CRM 里**：
+
+- ❌ 短信 / WhatsApp / 电话集成 — 专注邮件
+- ❌ 客户门户 / Portal — SDR 工具不需要
+- ❌ 发票 / 付款功能 — 那是成交后的事，不是 SDR 的事
+- ❌ 完整的营销自动化 — 那是 HubSpot/Mailchimp 的范畴
+
+如果 David 未来改主意，在上面加条目并把这里的对应项划掉。
+
+---
+
+*由 David Zheng 和 Claude 共同维护 · Amazon Solutions · SDR ProCRM*
