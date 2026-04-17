@@ -1,7 +1,6 @@
 """
-AI API routes — Research reports, email drafting, and semantic search
-All AI features are triggered explicitly by the user (not automatic)
-so API key costs are predictable.
+AI API routes — Research reports, email drafting, and smart search
+All AI features powered by a single Anthropic API key (Haiku 4.5).
 """
 
 import json
@@ -9,16 +8,20 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.user import User
+from app.core.config import CLAUDE_MODEL, AI_SEARCH_ACTIVITY_LIMIT
+from app.models.user import User, UserRole
 from app.models.contact import Contact
 from app.models.activity import Activity
-from app.models.embedding import Embedding
 from app.services.ai import ai_service
+
+# DISABLED: Using Claude direct search instead of pgvector embeddings
+# from app.models.embedding import Embedding
 
 router = APIRouter(prefix="/api/ai", tags=["AI"])
 
@@ -27,10 +30,17 @@ router = APIRouter(prefix="/api/ai", tags=["AI"])
 
 @router.get("/status")
 async def ai_status(current_user: User = Depends(get_current_user)):
-    """Check which AI services are configured"""
+    """Check AI service status — single provider (Anthropic)"""
     return {
-        "claude_ready": ai_service.claude_ready,
-        "embeddings_ready": ai_service.embeddings_ready,
+        "ai_ready": ai_service.ai_ready,
+        "model": CLAUDE_MODEL.replace("-20251001", ""),
+        "features": {
+            "research_reports": ai_service.ai_ready,
+            "email_drafting": ai_service.ai_ready,
+            "smart_search": ai_service.ai_ready,
+        },
+        "provider": "anthropic",
+        "note": "All AI features powered by a single Anthropic API Key",
     }
 
 
@@ -47,7 +57,7 @@ async def generate_person_report(
     current_user: User = Depends(get_current_user),
 ):
     """Generate an AI research report about a person and save it to their profile"""
-    if not ai_service.claude_ready:
+    if not ai_service.ai_ready:
         raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
 
     contact = await db.get(Contact, data.contact_id)
@@ -63,10 +73,8 @@ async def generate_person_report(
         linkedin_url=contact.linkedin_url,
     )
 
-    # Save to contact
     contact.ai_person_report = report
 
-    # Also generate tags
     try:
         tags = await ai_service.generate_tags(
             title=contact.title,
@@ -75,7 +83,7 @@ async def generate_person_report(
         )
         contact.ai_tags = json.dumps(tags)
     except Exception:
-        pass  # Tags are optional, don't fail the whole request
+        pass
 
     await db.flush()
     return {"report": report, "tags": contact.ai_tags}
@@ -88,7 +96,7 @@ async def generate_company_report(
     current_user: User = Depends(get_current_user),
 ):
     """Generate an AI research report about a contact's company"""
-    if not ai_service.claude_ready:
+    if not ai_service.ai_ready:
         raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
 
     contact = await db.get(Contact, data.contact_id)
@@ -119,21 +127,14 @@ async def draft_email(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Generate a personalized email draft using all available context:
-    - Contact info
-    - AI person report
-    - AI company report
-    - Activity history
-    """
-    if not ai_service.claude_ready:
+    """Generate a personalized email draft using all available context"""
+    if not ai_service.ai_ready:
         raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
 
     contact = await db.get(Contact, data.contact_id)
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    # Get activity history for context
     result = await db.execute(
         select(Activity)
         .where(Activity.contact_id == contact.id)
@@ -142,7 +143,6 @@ async def draft_email(
     )
     activities = result.scalars().all()
 
-    # Build activity history text
     history_lines = []
     for act in activities:
         history_lines.append(
@@ -164,95 +164,7 @@ async def draft_email(
     return draft
 
 
-# === Semantic Search ===
-
-class EmbedRequest(BaseModel):
-    activity_id: int
-
-
-@router.post("/embed-activity")
-async def embed_single_activity(
-    data: EmbedRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Generate and store an embedding for a single activity"""
-    if not ai_service.embeddings_ready:
-        raise HTTPException(status_code=400, detail="OpenAI API key not configured.")
-
-    activity = await db.get(Activity, data.activity_id)
-    if activity is None:
-        raise HTTPException(status_code=404, detail="Activity not found")
-
-    # Build text for embedding
-    source_text = f"{activity.activity_type.value}: {activity.subject or ''} {activity.content or ''}"
-
-    vector = await ai_service.create_embedding(source_text)
-
-    # Check if embedding already exists
-    result = await db.execute(
-        select(Embedding).where(Embedding.activity_id == activity.id)
-    )
-    existing = result.scalar_one_or_none()
-
-    if existing:
-        existing.source_text = source_text
-        existing.vector = vector
-    else:
-        emb = Embedding(
-            activity_id=activity.id,
-            source_text=source_text,
-            vector=vector,
-        )
-        db.add(emb)
-
-    await db.flush()
-    return {"status": "ok", "activity_id": activity.id}
-
-
-@router.post("/embed-all")
-async def embed_all_activities(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Generate embeddings for all activities that don't have one yet"""
-    if not ai_service.embeddings_ready:
-        raise HTTPException(status_code=400, detail="OpenAI API key not configured.")
-
-    # Find activities without embeddings
-    result = await db.execute(
-        select(Activity).where(
-            ~Activity.id.in_(select(Embedding.activity_id))
-        )
-    )
-    activities = result.scalars().all()
-
-    if not activities:
-        return {"message": "All activities already have embeddings", "count": 0}
-
-    # Batch embed (max 20 at a time to avoid API limits)
-    count = 0
-    batch_size = 20
-    for i in range(0, len(activities), batch_size):
-        batch = activities[i : i + batch_size]
-        texts = [
-            f"{a.activity_type.value}: {a.subject or ''} {a.content or ''}"
-            for a in batch
-        ]
-        vectors = await ai_service.create_embeddings_batch(texts)
-
-        for activity, text, vector in zip(batch, texts, vectors):
-            emb = Embedding(
-                activity_id=activity.id,
-                source_text=text,
-                vector=vector,
-            )
-            db.add(emb)
-            count += 1
-
-    await db.flush()
-    return {"message": f"Created embeddings for {count} activities", "count": count}
-
+# === Smart Search (Claude reads activities directly) ===
 
 class SearchRequest(BaseModel):
     query: str
@@ -260,62 +172,80 @@ class SearchRequest(BaseModel):
 
 
 @router.post("/search")
-async def semantic_search(
+async def smart_search(
     data: SearchRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Semantic search — find activities by meaning, not exact keywords.
-    Example: "who mentioned budget problems" → finds all related conversations
+    Smart search — Claude reads all activities and finds relevant ones.
+    No embeddings needed. Works immediately with just an Anthropic key.
     """
-    if not ai_service.embeddings_ready:
-        raise HTTPException(status_code=400, detail="OpenAI API key not configured.")
+    if not ai_service.ai_ready:
+        raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
 
-    # Convert search query to vector
-    query_vector = await ai_service.create_embedding(data.query)
-    vector_str = "[" + ",".join(str(v) for v in query_vector) + "]"
-
-    # Search using cosine distance in pgvector
-    result = await db.execute(
-        text("""
-            SELECT
-                e.activity_id,
-                e.source_text,
-                1 - (e.vector <=> :query_vec::vector) AS similarity,
-                a.activity_type,
-                a.subject,
-                a.content,
-                a.created_at,
-                a.contact_id,
-                c.first_name,
-                c.last_name,
-                c.company_name,
-                u.full_name AS user_name
-            FROM embeddings e
-            JOIN activities a ON a.id = e.activity_id
-            JOIN contacts c ON c.id = a.contact_id
-            JOIN users u ON u.id = a.user_id
-            ORDER BY e.vector <=> :query_vec::vector
-            LIMIT :lim
-        """),
-        {"query_vec": vector_str, "lim": data.limit},
+    # Load activities with contact info
+    query = (
+        select(Activity)
+        .options(joinedload(Activity.contact), joinedload(Activity.user))
+        .order_by(Activity.created_at.desc())
+        .limit(AI_SEARCH_ACTIVITY_LIMIT)
     )
-    rows = result.fetchall()
 
-    results = []
-    for row in rows:
-        results.append({
-            "activity_id": row.activity_id,
-            "similarity": round(float(row.similarity), 3),
-            "activity_type": row.activity_type,
-            "subject": row.subject,
-            "content": row.content,
-            "created_at": str(row.created_at),
-            "contact_id": row.contact_id,
-            "contact_name": f"{row.first_name} {row.last_name}",
-            "company_name": row.company_name,
-            "user_name": row.user_name,
-        })
+    # Apply role-based filtering
+    if current_user.role == UserRole.SDR:
+        query = query.where(Activity.user_id == current_user.id)
 
-    return {"results": results, "query": data.query}
+    result = await db.execute(query)
+    activities = result.unique().scalars().all()
+
+    if not activities:
+        return {"results": [], "query": data.query}
+
+    # Build activities text for Claude to read
+    lines = []
+    for a in activities:
+        contact_name = f"{a.contact.first_name} {a.contact.last_name}" if a.contact else "Unknown"
+        company = a.contact.company_name if a.contact else ""
+        user_name = a.user.full_name if a.user else "Unknown"
+        lines.append(
+            f"[ID:{a.id}] [{a.activity_type.value.upper()}] "
+            f"Contact: {contact_name} ({company}) | "
+            f"By: {user_name} | "
+            f"Date: {a.created_at.strftime('%Y-%m-%d')} | "
+            f"Subject: {a.subject or 'N/A'} | "
+            f"Content: {(a.content or '')[:300]}"
+        )
+
+    activities_text = "\n".join(lines)
+
+    # Ask Claude to find relevant activities
+    raw_result = await ai_service.smart_search(data.query, activities_text)
+
+    # Parse Claude's JSON response
+    import json as json_lib
+    try:
+        cleaned = raw_result.strip().strip("`")
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:].strip()
+        results = json_lib.loads(cleaned)
+        if not isinstance(results, list):
+            results = []
+    except (json_lib.JSONDecodeError, ValueError):
+        results = []
+
+    return {"results": results[:data.limit], "query": data.query}
+
+
+# DISABLED: Embedding-based search endpoints
+# Keeping pgvector schema and indexes intact for future use (>1000 contacts)
+#
+# @router.post("/embed-activity")
+# async def embed_single_activity(...):
+#     """DISABLED: Using Claude direct search instead"""
+#     pass
+#
+# @router.post("/embed-all")
+# async def embed_all_activities(...):
+#     """DISABLED: Using Claude direct search instead"""
+#     pass

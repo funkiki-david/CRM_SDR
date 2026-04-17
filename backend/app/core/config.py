@@ -18,16 +18,27 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 小时，一个工作日
 
-    # === Apollo.io（后续步骤启用）===
+    # === Apollo.io ===
     APOLLO_API_KEY: str = ""
 
-    # === AI API（后续步骤启用）===
+    # === AI (Anthropic only — single provider) ===
     ANTHROPIC_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""
+
+    # DISABLED: Using Claude direct search instead of OpenAI embeddings
+    # OPENAI_API_KEY: str = ""
 
     class Config:
-        env_file = ".env"  # 自动读取 .env 文件
+        env_file = ".env"
 
 
 # 全局配置实例 — 其他文件直接 import 使用
 settings = Settings()
+
+
+# === AI Model Configuration ===
+# All AI features use Haiku 4.5 — change here to switch model everywhere
+CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+CLAUDE_MAX_TOKENS_RESEARCH = 2000   # Person/company research reports
+CLAUDE_MAX_TOKENS_EMAIL = 800       # Email drafting
+CLAUDE_MAX_TOKENS_SEARCH = 1000     # Smart search
+AI_SEARCH_ACTIVITY_LIMIT = 500      # How many activities to feed into search context

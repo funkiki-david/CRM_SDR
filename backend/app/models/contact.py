@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy import String, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -37,13 +38,28 @@ class Contact(Base):
     industry: Mapped[Optional[str]] = mapped_column(String(100))       # 行业
     company_size: Mapped[Optional[str]] = mapped_column(String(50))    # 公司规模
 
+    # === Location ===
+    city: Mapped[Optional[str]] = mapped_column(String(100))
+    state: Mapped[Optional[str]] = mapped_column(String(50))
+
     # === 社交链接 ===
     linkedin_url: Mapped[Optional[str]] = mapped_column(String(500))   # LinkedIn 主页
+    website: Mapped[Optional[str]] = mapped_column(String(500))        # 公司/个人网站
 
     # === AI 生成内容 ===
     ai_person_report: Mapped[Optional[str]] = mapped_column(Text)      # AI 人物研究报告
     ai_company_report: Mapped[Optional[str]] = mapped_column(Text)     # AI 公司研究报告
     ai_tags: Mapped[Optional[str]] = mapped_column(Text)               # 行业关键词标签（JSON 格式）
+
+    # === Tags & Notes (spec: Contacts Enhancement) ===
+    industry_tags_array: Mapped[Optional[list]] = mapped_column(
+        ARRAY(String(30)), server_default="{}", name="industry_tags_arr"
+    )
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+
+    # === Import tracking ===
+    import_source: Mapped[Optional[str]] = mapped_column(String(50))   # manual | csv_import | apollo
+    import_batch_id: Mapped[Optional[str]] = mapped_column(String(36)) # UUID for batch imports
 
     # === Apollo.io 数据 ===
     apollo_id: Mapped[Optional[str]] = mapped_column(String(100))      # Apollo 内部 ID（用于同步）

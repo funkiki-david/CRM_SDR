@@ -34,3 +34,9 @@ python-dotenv==1.1.0
 
 # SQLAlchemy 异步支持
 greenlet==3.2.5
+
+# AI — Anthropic Claude (single provider for all AI features)
+anthropic==0.95.0
+
+# DISABLED: OpenAI (kept for future embedding-based search)
+# openai==2.32.0

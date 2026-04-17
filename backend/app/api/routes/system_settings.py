@@ -41,15 +41,30 @@ async def apollo_key_status(
     }
 
 
-# === Anthropic (Claude) ===
+# === Anthropic (Claude) — single AI provider ===
 
 @router.post("/anthropic-key")
 async def update_anthropic_key(
     data: ApiKeyUpdate,
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
+    """Save Anthropic API key and validate it by making a test call"""
     ai_service.update_keys(anthropic_key=data.key)
-    return {"message": "Anthropic API key updated successfully"}
+
+    # Validate the key
+    is_valid = await ai_service.validate_key()
+
+    if is_valid:
+        return {
+            "message": "API Key is valid and working",
+            "valid": True,
+        }
+    else:
+        # Key was saved but doesn't work — keep it so user can see the error
+        return {
+            "message": "Invalid key. Please check and try again.",
+            "valid": False,
+        }
 
 
 @router.get("/anthropic-key/status")
@@ -57,27 +72,11 @@ async def anthropic_key_status(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     return {
-        "configured": ai_service.claude_ready,
-        "key_preview": f"...{settings.ANTHROPIC_API_KEY[-6:]}" if ai_service.claude_ready else None,
+        "configured": ai_service.ai_ready,
+        "key_preview": f"...{settings.ANTHROPIC_API_KEY[-6:]}" if ai_service.ai_ready else None,
     }
 
 
-# === OpenAI ===
-
-@router.post("/openai-key")
-async def update_openai_key(
-    data: ApiKeyUpdate,
-    current_user: User = Depends(require_role(UserRole.ADMIN)),
-):
-    ai_service.update_keys(openai_key=data.key)
-    return {"message": "OpenAI API key updated successfully"}
-
-
-@router.get("/openai-key/status")
-async def openai_key_status(
-    current_user: User = Depends(require_role(UserRole.ADMIN)),
-):
-    return {
-        "configured": ai_service.embeddings_ready,
-        "key_preview": f"...{settings.OPENAI_API_KEY[-6:]}" if ai_service.embeddings_ready else None,
-    }
+# DISABLED: OpenAI key management — using Claude for all AI features
+# @router.post("/openai-key")
+# @router.get("/openai-key/status")

@@ -1,44 +1,74 @@
 """
-AI Service — Claude for text generation, OpenAI for embeddings
+AI Service — All AI features powered by Anthropic Claude (Haiku 4.5)
+Single provider, single API key, single model.
+
 Handles:
   - Person research report generation
   - Company research report generation
   - Personalized email drafting
-  - Text → vector embedding (for semantic search)
+  - Smart search (Claude reads activities directly, no embeddings needed)
+  - API key validation
 """
 
 from typing import List, Optional
 
 import anthropic
-import openai
 
-from app.core.config import settings
+from app.core.config import (
+    settings,
+    CLAUDE_MODEL,
+    CLAUDE_MAX_TOKENS_RESEARCH,
+    CLAUDE_MAX_TOKENS_EMAIL,
+    CLAUDE_MAX_TOKENS_SEARCH,
+)
+
+# DISABLED: Using Claude direct search instead of OpenAI embeddings
+# import openai
 
 
 class AIService:
-    """Unified AI service wrapping Claude and OpenAI APIs"""
+    """All AI features powered by a single Anthropic API key"""
 
     def __init__(self):
         self._anthropic_key = settings.ANTHROPIC_API_KEY
-        self._openai_key = settings.OPENAI_API_KEY
 
-    def update_keys(self, anthropic_key: str = "", openai_key: str = ""):
+    def update_keys(self, anthropic_key: str = "", **kwargs):
         if anthropic_key:
             self._anthropic_key = anthropic_key
             settings.ANTHROPIC_API_KEY = anthropic_key
-        if openai_key:
-            self._openai_key = openai_key
-            settings.OPENAI_API_KEY = openai_key
 
     @property
-    def claude_ready(self) -> bool:
+    def ai_ready(self) -> bool:
         return bool(self._anthropic_key)
 
+    # Keep old property name for backward compat
     @property
-    def embeddings_ready(self) -> bool:
-        return bool(self._openai_key)
+    def claude_ready(self) -> bool:
+        return self.ai_ready
 
-    # === Claude: Text Generation ===
+    # DISABLED: Using Claude direct search instead of OpenAI embeddings
+    # @property
+    # def embeddings_ready(self) -> bool:
+    #     return bool(self._openai_key)
+
+    # === Key Validation ===
+
+    async def validate_key(self) -> bool:
+        """Test the API key by making a minimal Claude call. Returns True if valid."""
+        if not self._anthropic_key:
+            return False
+        try:
+            client = anthropic.AsyncAnthropic(api_key=self._anthropic_key)
+            message = await client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=10,
+                messages=[{"role": "user", "content": "Hi"}],
+            )
+            return bool(message.content)
+        except Exception:
+            return False
+
+    # === Research Reports ===
 
     async def generate_person_report(
         self,
@@ -66,7 +96,7 @@ Write a 3-4 paragraph report covering:
 
 Be specific and actionable. No fluff. Write in a direct, professional tone."""
 
-        return await self._call_claude(prompt)
+        return await self._call_claude(prompt, CLAUDE_MAX_TOKENS_RESEARCH)
 
     async def generate_company_report(
         self,
@@ -92,7 +122,7 @@ Write a 3-4 paragraph report covering:
 
 Be specific and actionable. No fluff. Write in a direct, professional tone."""
 
-        return await self._call_claude(prompt)
+        return await self._call_claude(prompt, CLAUDE_MAX_TOKENS_RESEARCH)
 
     async def generate_tags(
         self,
@@ -109,17 +139,17 @@ Industry: {industry or 'Unknown'}
 
 Return ONLY a JSON array of strings, nothing else. Example: ["SaaS", "Engineering Leader", "Series B"]"""
 
-        result = await self._call_claude(prompt)
-        # Parse the JSON array from the response
+        result = await self._call_claude(prompt, 200)
         import json
         try:
-            # Strip any markdown code blocks
             cleaned = result.strip().strip("`").strip()
             if cleaned.startswith("json"):
                 cleaned = cleaned[4:].strip()
             return json.loads(cleaned)
         except (json.JSONDecodeError, ValueError):
             return []
+
+    # === Email Drafting ===
 
     async def draft_email(
         self,
@@ -159,9 +189,8 @@ SUBJECT: [subject line here]
 BODY:
 [email body here]"""
 
-        result = await self._call_claude(prompt)
+        result = await self._call_claude(prompt, CLAUDE_MAX_TOKENS_EMAIL)
 
-        # Parse subject and body
         subject = ""
         body = result
         if "SUBJECT:" in result and "BODY:" in result:
@@ -172,35 +201,70 @@ BODY:
 
         return {"subject": subject, "body": body}
 
-    async def _call_claude(self, prompt: str) -> str:
-        """Call Claude API with prompt caching for efficiency"""
+    # === Smart Search (Claude reads activities directly) ===
+
+    async def smart_search(self, query: str, activities_text: str) -> str:
+        """
+        Search activities using Claude's understanding instead of embeddings.
+        Claude reads all activities and finds relevant ones based on the query.
+        """
+        prompt = f"""You are a CRM search assistant. A sales rep is searching their activity history.
+
+SEARCH QUERY: "{query}"
+
+Below are all recorded activities (calls, emails, meetings, notes). Find the ones most relevant to the search query.
+
+ACTIVITIES:
+{activities_text}
+
+Return a JSON array of the most relevant results (max 10). Each result should have:
+- "activity_id": the ID number
+- "relevance": "high", "medium", or "low"
+- "reason": one sentence explaining why this matches the query
+- "contact_name": the contact's name
+- "company_name": the company name (if known)
+- "activity_type": the type
+- "subject": the subject line
+- "snippet": a short excerpt from the content that matches
+
+Return ONLY the JSON array, no other text. If nothing matches, return an empty array []."""
+
+        result = await self._call_claude(prompt, CLAUDE_MAX_TOKENS_SEARCH)
+
+        return result
+
+    # === Core Claude Call ===
+
+    async def _call_claude(self, prompt: str, max_tokens: int = 1024) -> str:
+        """Call Claude API using the configured model"""
         client = anthropic.AsyncAnthropic(api_key=self._anthropic_key)
         message = await client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1024,
+            model=CLAUDE_MODEL,
+            max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
         return message.content[0].text
 
-    # === OpenAI: Embeddings ===
-
-    async def create_embedding(self, text: str) -> List[float]:
-        """Convert text to a 1536-dimensional vector using OpenAI"""
-        client = openai.AsyncOpenAI(api_key=self._openai_key)
-        response = await client.embeddings.create(
-            model="text-embedding-3-small",
-            input=text,
-        )
-        return response.data[0].embedding
-
-    async def create_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
-        """Batch embed multiple texts at once"""
-        client = openai.AsyncOpenAI(api_key=self._openai_key)
-        response = await client.embeddings.create(
-            model="text-embedding-3-small",
-            input=texts,
-        )
-        return [item.embedding for item in response.data]
+    # DISABLED: Using Claude direct search instead of OpenAI embeddings
+    # Keeping code for future use when data exceeds ~1000 contacts
+    #
+    # async def create_embedding(self, text: str) -> List[float]:
+    #     """Convert text to a 1536-dimensional vector using OpenAI"""
+    #     client = openai.AsyncOpenAI(api_key=self._openai_key)
+    #     response = await client.embeddings.create(
+    #         model="text-embedding-3-small",
+    #         input=text,
+    #     )
+    #     return response.data[0].embedding
+    #
+    # async def create_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
+    #     """Batch embed multiple texts at once"""
+    #     client = openai.AsyncOpenAI(api_key=self._openai_key)
+    #     response = await client.embeddings.create(
+    #         model="text-embedding-3-small",
+    #         input=texts,
+    #     )
+    #     return [item.embedding for item in response.data]
 
 
 # Singleton instance

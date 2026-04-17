@@ -159,19 +159,9 @@ async def team_activity_feed(
         .options(joinedload(Activity.contact), joinedload(Activity.user))
     )
 
-    # Apply role-based filtering
+    # Role-based filtering: Admin & Manager see all, SDR sees only their own
     if current_user.role == UserRole.SDR:
         query = query.where(Activity.user_id == current_user.id)
-    elif current_user.role == UserRole.MANAGER:
-        query = query.where(
-            or_(
-                Activity.user_id == current_user.id,
-                Activity.user_id.in_(
-                    select(User.id).where(User.manager_id == current_user.id)
-                ),
-            )
-        )
-    # Admin sees all
 
     query = query.order_by(Activity.created_at.desc()).limit(limit)
     result = await db.execute(query)

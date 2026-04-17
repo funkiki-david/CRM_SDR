@@ -46,18 +46,9 @@ async def get_follow_ups(
         )
     )
 
-    # Role-based filtering
+    # Role-based filtering: Admin & Manager see all, SDR sees only their own
     if current_user.role == UserRole.SDR:
         query = query.where(Lead.owner_id == current_user.id)
-    elif current_user.role == UserRole.MANAGER:
-        query = query.where(
-            or_(
-                Lead.owner_id == current_user.id,
-                Lead.owner_id.in_(
-                    select(User.id).where(User.manager_id == current_user.id)
-                ),
-            )
-        )
 
     # Sort by urgency: overdue first, then today, then future
     query = query.order_by(Lead.next_follow_up.asc())
