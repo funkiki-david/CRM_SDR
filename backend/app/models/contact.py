@@ -51,6 +51,11 @@ class Contact(Base):
     ai_company_report: Mapped[Optional[str]] = mapped_column(Text)     # AI 公司研究报告
     ai_tags: Mapped[Optional[str]] = mapped_column(Text)               # 行业关键词标签（JSON 格式）
 
+    # 研究报告缓存元数据 Research report cache metadata
+    ai_person_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    ai_company_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    ai_report_model: Mapped[Optional[str]] = mapped_column(String(100))  # 记录用哪个模型生成的
+
     # === Tags & Notes (spec: Contacts Enhancement) ===
     industry_tags_array: Mapped[Optional[list]] = mapped_column(
         ARRAY(String(30)), server_default="{}", name="industry_tags_arr"

@@ -105,6 +105,7 @@ class ContactUpdate(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     linkedin_url: Optional[str] = None
+    website: Optional[str] = None
     industry_tags: Optional[List[str]] = None
     notes: Optional[str] = None
 
@@ -128,6 +129,9 @@ class ContactResponse(BaseModel):
     ai_person_report: Optional[str] = None
     ai_company_report: Optional[str] = None
     ai_tags: Optional[str] = None
+    ai_person_generated_at: Optional[datetime] = None
+    ai_company_generated_at: Optional[datetime] = None
+    ai_report_model: Optional[str] = None
     industry_tags_array: Optional[List[str]] = None
     notes: Optional[str] = None
     import_source: Optional[str] = None

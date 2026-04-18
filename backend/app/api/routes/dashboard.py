@@ -21,6 +21,7 @@ from app.services.ai_budget import (
     get_spend_today,
     get_spend_month,
     budget_status_color,
+    get_cache_stats_month,
 )
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -138,6 +139,7 @@ async def get_ai_budget_status(
     """
     today = await get_spend_today(db)
     month = await get_spend_month(db)
+    cache_stats = await get_cache_stats_month(db)
     return {
         "spent_today": round(today, 4),
         "spent_month": round(month, 4),
@@ -146,4 +148,5 @@ async def get_ai_budget_status(
         "status": budget_status_color(today),
         "daily_percent": round((today / AI_DAILY_BUDGET_USD) * 100, 1) if AI_DAILY_BUDGET_USD else 0,
         "monthly_percent": round((month / AI_MONTHLY_BUDGET_USD) * 100, 1) if AI_MONTHLY_BUDGET_USD else 0,
+        "cache": cache_stats,
     }

@@ -8,6 +8,12 @@ Handles:
   - Personalized email drafting
   - Smart search (Claude reads activities directly, no embeddings needed)
   - API key validation
+
+Prompt Caching:
+  静态的系统提示词（每次调用都不变的部分）走 Anthropic 的 ephemeral cache，
+  只收原价 10% 的费用。动态内容（联系人信息等）放在 user message 里。
+  注意：Haiku 4.5 的缓存最小块约 2048 tokens —— 低于此不会触发缓存，
+  但 cache_control 标记本身无害。
 """
 
 from typing import List, Optional
@@ -24,6 +30,78 @@ from app.core.config import (
 
 # DISABLED: Using Claude direct search instead of OpenAI embeddings
 # import openai
+
+
+# === 静态系统提示词 Static System Prompts (cacheable) ===
+# 抽出来做模块常量，便于审阅 + 让 Prompt Caching 生效。
+# 每次调用内容不变 → 只收 10% 价格（超过 cache 最小块时）。
+
+SYSTEM_PROMPT_RESEARCH_PERSON = """You are a sales research analyst helping SDRs prepare for outreach to B2B prospects.
+
+When given a person's info, produce a concise research brief covering:
+1. Professional background and likely responsibilities based on their title
+2. What they probably care about in their role (pain points, priorities)
+3. Conversation starters and angles for a cold outreach
+
+Writing guidelines:
+- Length: 3-4 paragraphs
+- Tone: direct, professional, actionable — no fluff
+- Specificity: make claims concrete to their title, company, industry
+- Focus on what an SDR can USE in the next 60 seconds of outreach prep"""
+
+SYSTEM_PROMPT_RESEARCH_COMPANY = """You are a sales research analyst helping SDRs understand prospect companies before outreach.
+
+When given a company's info, produce a concise company brief covering:
+1. What the company likely does based on available info
+2. Potential pain points and challenges for a company of this size and industry
+3. How a modern B2B SaaS solution might be relevant to them
+4. Key talking points for outreach
+
+Writing guidelines:
+- Length: 3-4 paragraphs
+- Tone: direct, professional, actionable — no fluff
+- Specificity: tailor observations to company size and industry
+- Surface concrete angles an SDR can reference in their first email"""
+
+SYSTEM_PROMPT_DRAFT_EMAIL = """You are a top-performing SDR writing a personalized cold email. You use ALL available context (person research, company research, interaction history) to craft a highly relevant, personalized message.
+
+Output format (MUST follow exactly):
+SUBJECT: [subject line here]
+BODY:
+[email body here]
+
+Email requirements:
+- Subject: under 50 characters, compelling, not salesy
+- Opening: shows you did your research (reference something specific)
+- Value prop: clear, 1-2 sentences
+- CTA: soft, no aggressive ask
+- Total body: under 150 words
+- Tone: conversational, professional, not salesy
+- Sign off as the sender name provided"""
+
+SYSTEM_PROMPT_SMART_SEARCH = """You are a CRM search assistant. A sales rep is searching their activity history.
+
+Given a search query and a list of activities (calls, emails, meetings, notes), return the most relevant matches as a JSON array.
+
+Each result MUST have:
+- "activity_id": the ID number
+- "relevance": "high", "medium", or "low"
+- "reason": one sentence explaining why this matches the query
+- "contact_name": the contact's name
+- "company_name": the company name (if known)
+- "activity_type": the type
+- "subject": the subject line
+- "snippet": a short excerpt from the content that matches
+
+Rules:
+- Return AT MOST 10 results, sorted by relevance
+- Return ONLY the JSON array, no prose before/after
+- If nothing matches, return []"""
+
+SYSTEM_PROMPT_TAGS = """You are a CRM categorization assistant. Given a person's title / company / industry, generate 4-6 short keyword tags for categorization.
+
+Return ONLY a JSON array of strings, nothing else.
+Example: ["SaaS", "Engineering Leader", "Series B"]"""
 
 
 class AIService:
@@ -244,21 +322,44 @@ Return ONLY the JSON array, no other text. If nothing matches, return an empty a
         return text
 
     async def _call_claude_raw(
-        self, prompt: str, max_tokens: int = 1024
+        self,
+        prompt: str,
+        max_tokens: int = 1024,
+        system: Optional[str] = None,
     ) -> tuple[str, "ClaudeUsage"]:
         """
-        Call Claude and return (text, usage). Usage includes token counts for
-        budget tracking and prompt-caching stats.
+        Call Claude and return (text, usage).
+
+        Args:
+          prompt: dynamic user message content
+          max_tokens: response cap
+          system: optional static system prompt — will be sent with
+                  cache_control=ephemeral to qualify for Prompt Caching
+                  discount (10% of input price) when above cache threshold.
         """
         # 局部 import 避免循环依赖 avoid circular import with ai_budget
         from app.services.ai_budget import ClaudeUsage
 
         client = anthropic.AsyncAnthropic(api_key=self._anthropic_key)
-        message = await client.messages.create(
+
+        kwargs = dict(
             model=CLAUDE_MODEL,
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
+        if system:
+            # 系统提示词以 ephemeral 缓存块形式传入
+            # System prompt as ephemeral cache block (static across calls)
+            kwargs["system"] = [
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
+
+        message = await client.messages.create(**kwargs)
+
         usage = ClaudeUsage(
             input_tokens=getattr(message.usage, "input_tokens", 0) or 0,
             output_tokens=getattr(message.usage, "output_tokens", 0) or 0,

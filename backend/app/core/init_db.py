@@ -13,12 +13,24 @@ from app.core.security import hash_password
 
 
 async def init_db():
-    """初始化数据库：建表 + 创建默认 Admin"""
+    """初始化数据库：建表 + 迁移字段 + 创建默认 Admin"""
     async with engine.begin() as conn:
         # 启用 pgvector 扩展
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         # 创建所有表（已存在的表不会重复创建）
         await conn.run_sync(Base.metadata.create_all)
+
+        # 字段级 idempotent 迁移 — create_all 不会对已存在表 ALTER
+        # Field-level idempotent migrations since create_all doesn't ALTER existing tables.
+        # 每条 ALTER 都用 IF NOT EXISTS，重复执行无副作用。
+        field_migrations = [
+            # 任务 5 AI 研究报告缓存元数据
+            "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_person_generated_at TIMESTAMPTZ",
+            "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_company_generated_at TIMESTAMPTZ",
+            "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_report_model VARCHAR(100)",
+        ]
+        for sql in field_migrations:
+            await conn.execute(text(sql))
 
     # 创建默认 Admin 用户（如果还没有的话）
     async with async_session() as session:

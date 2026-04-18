@@ -169,3 +169,43 @@ def budget_status_color(spent_today: float) -> str:
     if ratio < 0.8:
         return "yellow"
     return "red"
+
+
+async def get_cache_stats_month(db: AsyncSession) -> dict:
+    """
+    本月 Prompt Cache 命中统计 — 用于 Admin 面板
+    Returns: {cache_read_tokens, cache_write_tokens, input_tokens,
+              hit_rate, estimated_savings_usd}
+    """
+    now = datetime.now(timezone.utc)
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    result = await db.execute(
+        select(
+            func.coalesce(func.sum(AIUsageLog.cache_read_tokens), 0),
+            func.coalesce(func.sum(AIUsageLog.cache_write_tokens), 0),
+            func.coalesce(func.sum(AIUsageLog.input_tokens), 0),
+        )
+        .where(AIUsageLog.created_at >= start)
+        .where(AIUsageLog.status == "ok")
+    )
+    cache_read, cache_write, raw_input = result.one()
+    total_input_equiv = raw_input + cache_read + cache_write
+
+    # 命中率：缓存读占"本该是输入"的比例
+    hit_rate = (
+        (cache_read / total_input_equiv * 100) if total_input_equiv > 0 else 0
+    )
+
+    # 节省估算：如果这些 cache_read 原价付费会多花多少
+    # Savings = cache_read_tokens * (input_price - cache_read_price) / 1M
+    savings = (cache_read / 1_000_000) * (
+        AI_PRICE_INPUT_PER_M - AI_PRICE_CACHE_READ_PER_M
+    )
+
+    return {
+        "cache_read_tokens": int(cache_read),
+        "cache_write_tokens": int(cache_write),
+        "input_tokens": int(raw_input),
+        "hit_rate_percent": round(hit_rate, 2),
+        "estimated_savings_usd": round(savings, 4),
+    }

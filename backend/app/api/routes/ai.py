@@ -4,6 +4,7 @@ All AI features powered by a single Anthropic API key (Haiku 4.5).
 """
 
 import json
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,11 +20,17 @@ from app.core.config import (
     AI_SEARCH_ACTIVITY_LIMIT,
     CLAUDE_MAX_TOKENS_RESEARCH,
     CLAUDE_MAX_TOKENS_EMAIL,
+    AI_REPORT_CACHE_DAYS,
 )
 from app.models.user import User, UserRole
 from app.models.contact import Contact
 from app.models.activity import Activity
-from app.services.ai import ai_service
+from app.services.ai import (
+    ai_service,
+    SYSTEM_PROMPT_RESEARCH_PERSON,
+    SYSTEM_PROMPT_RESEARCH_COMPANY,
+    SYSTEM_PROMPT_DRAFT_EMAIL,
+)
 from app.services.ai_budget import call_ai_with_limit
 
 # DISABLED: Using Claude direct search instead of pgvector embeddings
@@ -33,40 +40,22 @@ router = APIRouter(prefix="/api/ai", tags=["AI"])
 
 
 def _build_person_prompt(contact: Contact) -> str:
-    """Build person research prompt (matches ai_service.generate_person_report)"""
-    return f"""You are a sales research analyst. Write a concise research brief about this person to help an SDR prepare for outreach.
-
-Person:
+    """Dynamic portion only — static instructions live in SYSTEM_PROMPT_RESEARCH_PERSON (cached)"""
+    return f"""Person to research:
 - Name: {contact.first_name} {contact.last_name}
 - Title: {contact.title or 'Unknown'}
 - Company: {contact.company_name or 'Unknown'}
 - Industry: {contact.industry or 'Unknown'}
-- LinkedIn: {contact.linkedin_url or 'Not available'}
-
-Write a 3-4 paragraph report covering:
-1. Professional background and likely responsibilities based on their title
-2. What they probably care about in their role (pain points, priorities)
-3. Conversation starters and angles for a cold outreach
-
-Be specific and actionable. No fluff. Write in a direct, professional tone."""
+- LinkedIn: {contact.linkedin_url or 'Not available'}"""
 
 
 def _build_company_prompt(contact: Contact) -> str:
-    return f"""You are a sales research analyst. Write a concise company research brief to help an SDR understand this prospect's company.
-
-Company:
+    """Dynamic portion only — static instructions live in SYSTEM_PROMPT_RESEARCH_COMPANY (cached)"""
+    return f"""Company to research:
 - Name: {contact.company_name or 'Unknown'}
 - Website: {contact.company_domain or 'Unknown'}
 - Industry: {contact.industry or 'Unknown'}
-- Size: {contact.company_size or 'Unknown'} employees
-
-Write a 3-4 paragraph report covering:
-1. What the company likely does based on available info
-2. Potential pain points and challenges for a company of this size and industry
-3. How our solution might be relevant to them
-4. Key talking points for outreach
-
-Be specific and actionable. No fluff. Write in a direct, professional tone."""
+- Size: {contact.company_size or 'Unknown'} employees"""
 
 
 # === Status ===
@@ -91,6 +80,29 @@ async def ai_status(current_user: User = Depends(get_current_user)):
 
 class ReportRequest(BaseModel):
     contact_id: int
+    force_refresh: bool = False  # True 时忽略缓存强制重新生成（Regenerate 按钮）
+
+
+def _cache_is_fresh(generated_at: Optional[datetime]) -> bool:
+    """Report is fresh if generated within AI_REPORT_CACHE_DAYS"""
+    if generated_at is None:
+        return False
+    # Database returns aware datetime for TIMESTAMPTZ
+    age = datetime.now(timezone.utc) - generated_at
+    return age < timedelta(days=AI_REPORT_CACHE_DAYS)
+
+
+def _report_meta(generated_at: Optional[datetime], model: Optional[str]) -> dict:
+    """UI 元数据 — 生成时间 + 多少天前 + 是否过期"""
+    if generated_at is None:
+        return {"generated_at": None, "days_ago": None, "model": None, "stale": False}
+    age = datetime.now(timezone.utc) - generated_at
+    return {
+        "generated_at": generated_at.isoformat(),
+        "days_ago": age.days,
+        "model": model,
+        "stale": age.days >= AI_REPORT_CACHE_DAYS,
+    }
 
 
 @router.post("/report/person")
@@ -99,23 +111,44 @@ async def generate_person_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate an AI research report about a person and save it to their profile"""
-    if not ai_service.ai_ready:
-        raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
-
+    """
+    Generate an AI research report about a person.
+    Cache: 30 天内不重复调 API，除非 force_refresh=true。
+    """
     contact = await db.get(Contact, data.contact_id)
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
+
+    # 先查缓存 Check cache first
+    if (
+        not data.force_refresh
+        and contact.ai_person_report
+        and _cache_is_fresh(contact.ai_person_generated_at)
+    ):
+        return {
+            "report": contact.ai_person_report,
+            "tags": contact.ai_tags,
+            "cached": True,
+            "meta": _report_meta(contact.ai_person_generated_at, contact.ai_report_model),
+        }
+
+    # 缓存不命中 → 调用 AI（走预算中间件）
+    if not ai_service.ai_ready:
+        raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
 
     prompt = _build_person_prompt(contact)
     report, _log = await call_ai_with_limit(
         db=db,
         user_id=current_user.id,
         feature="research_person",
-        call_fn=lambda: ai_service._call_claude_raw(prompt, CLAUDE_MAX_TOKENS_RESEARCH),
+        call_fn=lambda: ai_service._call_claude_raw(
+            prompt, CLAUDE_MAX_TOKENS_RESEARCH, system=SYSTEM_PROMPT_RESEARCH_PERSON,
+        ),
     )
 
     contact.ai_person_report = report
+    contact.ai_person_generated_at = datetime.now(timezone.utc)
+    contact.ai_report_model = CLAUDE_MODEL
 
     # Tag 生成是次要功能，失败不影响主流程
     try:
@@ -129,7 +162,12 @@ async def generate_person_report(
         pass
 
     await db.flush()
-    return {"report": report, "tags": contact.ai_tags}
+    return {
+        "report": report,
+        "tags": contact.ai_tags,
+        "cached": False,
+        "meta": _report_meta(contact.ai_person_generated_at, contact.ai_report_model),
+    }
 
 
 @router.post("/report/company")
@@ -146,17 +184,40 @@ async def generate_company_report(
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
 
+    # 先查缓存 Check cache first
+    if (
+        not data.force_refresh
+        and contact.ai_company_report
+        and _cache_is_fresh(contact.ai_company_generated_at)
+    ):
+        return {
+            "report": contact.ai_company_report,
+            "cached": True,
+            "meta": _report_meta(contact.ai_company_generated_at, contact.ai_report_model),
+        }
+
+    if not ai_service.ai_ready:
+        raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
+
     prompt = _build_company_prompt(contact)
     report, _log = await call_ai_with_limit(
         db=db,
         user_id=current_user.id,
         feature="research_company",
-        call_fn=lambda: ai_service._call_claude_raw(prompt, CLAUDE_MAX_TOKENS_RESEARCH),
+        call_fn=lambda: ai_service._call_claude_raw(
+            prompt, CLAUDE_MAX_TOKENS_RESEARCH, system=SYSTEM_PROMPT_RESEARCH_COMPANY,
+        ),
     )
 
     contact.ai_company_report = report
+    contact.ai_company_generated_at = datetime.now(timezone.utc)
+    contact.ai_report_model = CLAUDE_MODEL
     await db.flush()
-    return {"report": report}
+    return {
+        "report": report,
+        "cached": False,
+        "meta": _report_meta(contact.ai_company_generated_at, contact.ai_report_model),
+    }
 
 
 # === AI Email Drafting ===
@@ -194,13 +255,11 @@ async def draft_email(
         )
     activity_history = "\n".join(history_lines) if history_lines else ""
 
-    # Inline prompt build so we can route through call_ai_with_limit
+    # Dynamic context only — static SDR persona lives in SYSTEM_PROMPT_DRAFT_EMAIL (cached)
     person_block = f"PERSON RESEARCH:\n{contact.ai_person_report}" if contact.ai_person_report else ""
     company_block = f"COMPANY RESEARCH:\n{contact.ai_company_report}" if contact.ai_company_report else ""
     history_block = f"INTERACTION HISTORY:\n{activity_history}" if activity_history else "No prior interactions."
-    prompt = f"""You are a top-performing SDR writing a personalized cold email. Use ALL the context below to write a highly relevant, personalized email.
-
-CONTACT:
+    prompt = f"""CONTACT:
 - Name: {contact.first_name} {contact.last_name}
 - Title: {contact.title or 'Unknown'}
 - Company: {contact.company_name or 'Unknown'}
@@ -211,24 +270,15 @@ CONTACT:
 
 {history_block}
 
-Write a cold email with:
-1. A compelling, short subject line (under 50 characters)
-2. A personalized opening that shows you did your research
-3. A clear value proposition in 1-2 sentences
-4. A soft call to action
-
-Keep it under 150 words. Be conversational, not salesy. Sign off as {current_user.full_name}.
-
-Return the result in this exact format:
-SUBJECT: [subject line here]
-BODY:
-[email body here]"""
+Sender name: {current_user.full_name}"""
 
     result, _log = await call_ai_with_limit(
         db=db,
         user_id=current_user.id,
         feature="draft_email",
-        call_fn=lambda: ai_service._call_claude_raw(prompt, CLAUDE_MAX_TOKENS_EMAIL),
+        call_fn=lambda: ai_service._call_claude_raw(
+            prompt, CLAUDE_MAX_TOKENS_EMAIL, system=SYSTEM_PROMPT_DRAFT_EMAIL,
+        ),
     )
 
     subject = ""
