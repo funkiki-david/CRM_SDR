@@ -111,6 +111,71 @@ export const contactsApi = {
   /** Check if an email already exists (dedup) */
   checkEmail: (email: string) =>
     request(`/api/contacts/check-email?email=${encodeURIComponent(email)}`),
+
+  /**
+   * 批量导入 CSV。file 是 File 对象（来自 input[type=file] 或 drag-drop）。
+   * 返回 {created, updated, skipped, failed, errors}。
+   */
+  importCsv: async (file: File, updateExisting = false) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const form = new FormData();
+    form.append("file", file);
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const res = await fetch(
+      `${API_BASE}/api/contacts/import?update_existing=${updateExisting}`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Import failed" }));
+      throw new Error(err.detail || "Import failed");
+    }
+    return res.json();
+  },
+
+  /**
+   * 触发浏览器下载：导出当前用户可见的联系人为 CSV
+   * 角色权限在后端执行（SDR 只导自己）
+   */
+  exportCsv: async () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const res = await fetch(`${API_BASE}/api/contacts/export`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `contacts_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  /** 下载空白 CSV 模板 */
+  downloadTemplate: async () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const res = await fetch(`${API_BASE}/api/contacts/template`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("Template download failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "contacts_template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
 };
 
 /**

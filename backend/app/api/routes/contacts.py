@@ -3,9 +3,14 @@ Contacts API — CRUD operations for contacts
 Includes ownership-based access control and dedup checking.
 """
 
+import csv
+import io
+import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +25,46 @@ from app.schemas.contact import (
 )
 
 router = APIRouter(prefix="/api/contacts", tags=["Contacts"])
+
+
+# === CSV Import/Export ===
+# 导出字段顺序也作为模板下载顺序，跟 ContactCreate 对齐
+CSV_EXPORT_COLUMNS = [
+    "first_name", "last_name", "email", "phone", "title",
+    "company_name", "company_domain", "industry", "company_size",
+    "city", "state", "linkedin_url", "website",
+    "industry_tags", "notes",
+]
+
+# 常见字段别名 → 标准字段名（大小写不敏感）
+# 客户的 CSV 表头可能千奇百怪，这里做宽松映射
+CSV_ALIAS_MAP = {
+    "firstname": "first_name", "first name": "first_name", "fname": "first_name",
+    "lastname": "last_name", "last name": "last_name", "lname": "last_name", "surname": "last_name",
+    "email address": "email", "e-mail": "email", "mail": "email",
+    "phone number": "phone", "tel": "phone", "telephone": "phone", "mobile": "phone",
+    "job title": "title", "position": "title", "role": "title",
+    "company": "company_name", "organization": "company_name", "org": "company_name",
+    "domain": "company_domain", "website domain": "company_domain",
+    "linkedin": "linkedin_url", "linkedin profile": "linkedin_url",
+    "web": "website", "company website": "website", "url": "website",
+    "tags": "industry_tags", "keywords": "industry_tags",
+    "note": "notes", "comment": "notes", "comments": "notes",
+}
+
+
+def _normalize_header(h: str) -> str:
+    """规范化表头 —— 小写、去首尾空格、别名映射"""
+    key = (h or "").strip().lower()
+    return CSV_ALIAS_MAP.get(key, key.replace(" ", "_"))
+
+
+def _parse_tags(raw: str) -> list[str]:
+    """逗号或分号分隔的 tag 字符串 → list"""
+    if not raw:
+        return []
+    parts = [t.strip() for t in raw.replace(";", ",").split(",")]
+    return [t for t in parts if t][:10]
 
 
 def _apply_ownership_filter(query, user: User):
@@ -100,6 +145,209 @@ async def check_email_dedup(
         "exists": True,
         "existing_contact": ContactResponse.model_validate(existing),
         "last_activity_date": str(last_act) if last_act else None,
+    }
+
+
+# === CSV Export ===
+# 注意：必须在 /{contact_id} 之前注册，否则 FastAPI 会把 "export" 当成 contact_id
+
+@router.get("/export")
+async def export_contacts(
+    format: str = Query("csv"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    导出联系人为 CSV (UTF-8 BOM, Excel 中文不乱码)
+    遵守角色权限：SDR 只导出自己的，Admin/Manager 导出全部
+    """
+    if format != "csv":
+        raise HTTPException(status_code=400, detail="Only csv format is supported")
+
+    query = select(Contact).order_by(Contact.id)
+    query = _apply_ownership_filter(query, current_user)
+    result = await db.execute(query)
+    contacts = result.scalars().all()
+
+    buffer = io.StringIO()
+    # BOM for Excel UTF-8 recognition
+    buffer.write("\ufeff")
+    writer = csv.writer(buffer)
+    writer.writerow(CSV_EXPORT_COLUMNS)
+
+    for c in contacts:
+        tags = c.industry_tags_array or []
+        tag_str = ",".join(tags) if tags else ""
+        writer.writerow([
+            c.first_name or "",
+            c.last_name or "",
+            c.email or "",
+            c.phone or "",
+            c.title or "",
+            c.company_name or "",
+            c.company_domain or "",
+            c.industry or "",
+            c.company_size or "",
+            c.city or "",
+            c.state or "",
+            c.linkedin_url or "",
+            c.website or "",
+            tag_str,
+            (c.notes or "").replace("\r\n", " ").replace("\n", " "),
+        ])
+
+    buffer.seek(0)
+    filename = f"contacts_export_{len(contacts)}.csv"
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/template")
+async def download_template(
+    current_user: User = Depends(get_current_user),
+):
+    """下载空白 CSV 模板（只含表头 + 一行示例）"""
+    buffer = io.StringIO()
+    buffer.write("\ufeff")
+    writer = csv.writer(buffer)
+    writer.writerow(CSV_EXPORT_COLUMNS)
+    # 示例行 example row to make field format clear
+    writer.writerow([
+        "Jane", "Doe", "jane@example.com", "555-123-4567", "VP Sales",
+        "Acme Corp", "acme.com", "Software", "50-200",
+        "San Francisco", "CA", "https://linkedin.com/in/janedoe", "https://acme.com",
+        "SaaS,Decision Maker", "Met at SaaStr 2025",
+    ])
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="contacts_template.csv"'},
+    )
+
+
+# === CSV Import ===
+
+@router.post("/import")
+async def import_contacts(
+    file: UploadFile = File(...),
+    update_existing: bool = Query(False, description="如果邮箱已存在，是否更新（否则跳过）"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    批量导入联系人 CSV。
+    Dedup 规则：按 email 精确匹配（已存在 → 根据 update_existing 决定跳过/更新）。
+    返回：成功/跳过/失败统计 + 错误详情。
+    """
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    # 尝试 utf-8（带 BOM），失败 fallback gbk（Excel 中文导出默认）
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            text = raw.decode("gbk")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="文件编码不支持（需 UTF-8 或 GBK）")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV missing header row")
+
+    # 标准化表头
+    normalized_fields = {h: _normalize_header(h) for h in reader.fieldnames}
+
+    batch_id = str(uuid.uuid4())
+    created = updated = skipped = 0
+    failed: list[dict] = []
+
+    for row_num, raw_row in enumerate(reader, start=2):  # start=2 因为 1 是表头
+        row = {normalized_fields[k]: (v or "").strip() for k, v in raw_row.items()}
+
+        if not row.get("email"):
+            failed.append({"row": row_num, "reason": "missing email"})
+            continue
+
+        payload = {
+            "first_name": row.get("first_name") or "",
+            "last_name": row.get("last_name") or "",
+            "email": row.get("email"),
+        }
+        for key in ("phone", "title", "company_name", "company_domain",
+                    "industry", "company_size", "city", "state",
+                    "linkedin_url", "website", "notes"):
+            v = row.get(key)
+            if v:
+                payload[key] = v
+
+        tags = _parse_tags(row.get("industry_tags", ""))
+        if tags:
+            payload["industry_tags"] = tags
+
+        try:
+            validated = ContactCreate(**payload)
+        except ValidationError as e:
+            failed.append({
+                "row": row_num,
+                "email": row.get("email"),
+                "reason": "; ".join(err["msg"] for err in e.errors())[:200],
+            })
+            continue
+
+        existing_q = await db.execute(
+            select(Contact).where(Contact.email == validated.email)
+        )
+        existing = existing_q.scalar_one_or_none()
+
+        if existing:
+            if update_existing:
+                contact_data = validated.model_dump(exclude={"industry_tags"})
+                for k, v in contact_data.items():
+                    if v is not None:
+                        setattr(existing, k, v)
+                if validated.industry_tags:
+                    existing.industry_tags_array = validated.industry_tags
+                    import json as _json
+                    existing.ai_tags = _json.dumps(validated.industry_tags)
+                updated += 1
+            else:
+                skipped += 1
+            continue
+
+        contact_data = validated.model_dump(exclude={"industry_tags"})
+        contact = Contact(
+            **contact_data,
+            owner_id=current_user.id,
+            import_source="csv_import",
+            import_batch_id=batch_id,
+        )
+        if validated.industry_tags:
+            contact.industry_tags_array = validated.industry_tags
+            import json as _json
+            contact.ai_tags = _json.dumps(validated.industry_tags)
+
+        db.add(contact)
+        await db.flush()
+        created += 1
+
+    await db.flush()
+
+    return {
+        "batch_id": batch_id,
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "failed": len(failed),
+        "errors": failed[:50],
     }
 
 
@@ -247,3 +495,5 @@ async def update_contact(
 
     await db.flush()
     return contact
+
+

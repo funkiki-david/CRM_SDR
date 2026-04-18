@@ -11,6 +11,7 @@ import AppShell from "@/components/app-shell";
 import QuickEntry from "@/components/quick-entry";
 import EmailCompose from "@/components/email-compose";
 import AddContact from "@/components/add-contact";
+import ImportContacts from "@/components/import-contacts";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -111,6 +112,8 @@ export default function ContactsPage() {
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const [emailComposeOpen, setEmailComposeOpen] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [generatingPersonReport, setGeneratingPersonReport] = useState(false);
   const [generatingCompanyReport, setGeneratingCompanyReport] = useState(false);
@@ -199,11 +202,26 @@ export default function ContactsPage() {
               <Button size="sm" className="text-xs h-7" onClick={() => setAddContactOpen(true)}>
                 + Add
               </Button>
-              <Button size="sm" variant="outline" className="text-xs h-7" disabled>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7"
+                onClick={() => setImportOpen(true)}
+              >
                 ↓ Import
               </Button>
-              <Button size="sm" variant="outline" className="text-xs h-7" disabled>
-                ↑ Export
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7"
+                disabled={exporting}
+                onClick={async () => {
+                  setExporting(true);
+                  try { await contactsApi.exportCsv(); } catch { /* noop */ }
+                  setExporting(false);
+                }}
+              >
+                {exporting ? "Exporting..." : "↑ Export"}
               </Button>
             </div>
           </div>
@@ -617,6 +635,13 @@ export default function ContactsPage() {
             loadActivities(c.id);
           }).catch(() => {});
         }}
+      />
+
+      {/* Import Contacts modal */}
+      <ImportContacts
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onSuccess={() => loadContacts()}
       />
 
       {/* Quick Entry dialog for logging activities from contact detail */}
