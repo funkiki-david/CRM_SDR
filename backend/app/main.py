@@ -14,7 +14,8 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.contacts import router as contacts_router
 from app.api.routes.activities import router as activities_router
 from app.api.routes.dashboard import router as dashboard_router
-from app.api.routes.templates import router as templates_router
+# PAUSED: Templates page removed from frontend, keeping code for future use
+# from app.api.routes.templates import router as templates_router
 from app.api.routes.emails import router as emails_router
 from app.api.routes.apollo import router as apollo_router
 from app.api.routes.system_settings import router as settings_router
@@ -37,9 +38,15 @@ app = FastAPI(
 )
 
 # CORS — allow frontend to call backend API
-# In production, FRONTEND_URL env var sets the allowed origin (e.g. https://crm.amazonsolutions.us)
-_origins = ["http://localhost:3000"]
-if os.getenv("FRONTEND_URL"):
+# 白名单方式（保留 credentials=True，浏览器规范禁止 * + credentials 组合）
+# Whitelist approach: keep credentials=True (browsers reject * + credentials combo)
+_origins = [
+    "http://localhost:3000",
+    "https://zealous-enjoyment-production.up.railway.app",
+    "https://crm-frontend-production.up.railway.app",
+]
+# 可选：FRONTEND_URL 环境变量追加额外 origin
+if os.getenv("FRONTEND_URL") and os.getenv("FRONTEND_URL") not in _origins:
     _origins.append(os.getenv("FRONTEND_URL"))
 
 app.add_middleware(
@@ -55,7 +62,7 @@ app.include_router(auth_router)
 app.include_router(contacts_router)
 app.include_router(activities_router)
 app.include_router(dashboard_router)
-app.include_router(templates_router)
+# app.include_router(templates_router)  # PAUSED
 app.include_router(emails_router)
 app.include_router(apollo_router)
 app.include_router(settings_router)
