@@ -10,6 +10,7 @@ from app.models.embedding import Embedding
 from app.models.email_account import EmailAccount
 from app.models.email_template import EmailTemplate
 from app.models.sent_email import SentEmail, EmailStatus
+from app.models.ai_usage_log import AIUsageLog
 
 __all__ = [
     "User", "UserRole",
@@ -20,4 +21,5 @@ __all__ = [
     "EmailAccount",
     "EmailTemplate",
     "SentEmail", "EmailStatus",
+    "AIUsageLog",
 ]

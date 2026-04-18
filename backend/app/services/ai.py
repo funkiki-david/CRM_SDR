@@ -236,14 +236,36 @@ Return ONLY the JSON array, no other text. If nothing matches, return an empty a
     # === Core Claude Call ===
 
     async def _call_claude(self, prompt: str, max_tokens: int = 1024) -> str:
-        """Call Claude API using the configured model"""
+        """
+        Call Claude and return the raw text (backward-compat).
+        Token usage is discarded — for budget tracking prefer _call_claude_raw().
+        """
+        text, _ = await self._call_claude_raw(prompt, max_tokens)
+        return text
+
+    async def _call_claude_raw(
+        self, prompt: str, max_tokens: int = 1024
+    ) -> tuple[str, "ClaudeUsage"]:
+        """
+        Call Claude and return (text, usage). Usage includes token counts for
+        budget tracking and prompt-caching stats.
+        """
+        # 局部 import 避免循环依赖 avoid circular import with ai_budget
+        from app.services.ai_budget import ClaudeUsage
+
         client = anthropic.AsyncAnthropic(api_key=self._anthropic_key)
         message = await client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
-        return message.content[0].text
+        usage = ClaudeUsage(
+            input_tokens=getattr(message.usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(message.usage, "output_tokens", 0) or 0,
+            cache_read_tokens=getattr(message.usage, "cache_read_input_tokens", 0) or 0,
+            cache_write_tokens=getattr(message.usage, "cache_creation_input_tokens", 0) or 0,
+        )
+        return message.content[0].text, usage
 
     # DISABLED: Using Claude direct search instead of OpenAI embeddings
     # Keeping code for future use when data exceeds ~1000 contacts

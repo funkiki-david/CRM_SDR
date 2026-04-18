@@ -6,16 +6,22 @@ Returns leads that need follow-up today, sorted by urgency
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, or_, case
+from sqlalchemy import select, func, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
+from app.core.config import AI_DAILY_BUDGET_USD, AI_MONTHLY_BUDGET_USD
 from app.models.user import User, UserRole
 from app.models.lead import Lead, LeadStatus
 from app.models.contact import Contact
 from app.models.activity import Activity
+from app.services.ai_budget import (
+    get_spend_today,
+    get_spend_month,
+    budget_status_color,
+)
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
@@ -93,3 +99,51 @@ async def get_follow_ups(
         })
 
     return {"follow_ups": follow_ups, "total": len(follow_ups)}
+
+
+@router.get("/pipeline-summary")
+async def get_pipeline_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Pipeline overview — count of leads in each stage.
+    Returns counts grouped by LeadStatus.
+    """
+    query = select(Lead.status, func.count(Lead.id)).group_by(Lead.status)
+
+    # Role-based filtering
+    if current_user.role == UserRole.SDR:
+        query = query.where(Lead.owner_id == current_user.id)
+
+    result = await db.execute(query)
+    rows = result.all()
+
+    # Build counts dict with all statuses defaulting to 0
+    counts = {s.value: 0 for s in LeadStatus}
+    for status, count in rows:
+        counts[status.value] = count
+
+    return counts
+
+
+@router.get("/ai-budget")
+async def get_ai_budget_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    AI 预算状态 — Dashboard 右上角显示用
+    Returns today's spend, month's spend, limits, and status color.
+    """
+    today = await get_spend_today(db)
+    month = await get_spend_month(db)
+    return {
+        "spent_today": round(today, 4),
+        "spent_month": round(month, 4),
+        "daily_limit": AI_DAILY_BUDGET_USD,
+        "monthly_limit": AI_MONTHLY_BUDGET_USD,
+        "status": budget_status_color(today),
+        "daily_percent": round((today / AI_DAILY_BUDGET_USD) * 100, 1) if AI_DAILY_BUDGET_USD else 0,
+        "monthly_percent": round((month / AI_MONTHLY_BUDGET_USD) * 100, 1) if AI_MONTHLY_BUDGET_USD else 0,
+    }

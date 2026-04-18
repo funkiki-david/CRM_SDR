@@ -42,3 +42,18 @@ CLAUDE_MAX_TOKENS_RESEARCH = 2000   # Person/company research reports
 CLAUDE_MAX_TOKENS_EMAIL = 800       # Email drafting
 CLAUDE_MAX_TOKENS_SEARCH = 1000     # Smart search
 AI_SEARCH_ACTIVITY_LIMIT = 500      # How many activities to feed into search context
+
+# === AI 成本保护 Cost Guardrails ===
+# 价格 per 1M tokens (Claude Haiku 4.5 官方价)
+# Pricing reference: https://www.anthropic.com/pricing
+AI_PRICE_INPUT_PER_M = 1.0          # $1 / 1M input tokens
+AI_PRICE_OUTPUT_PER_M = 5.0         # $5 / 1M output tokens
+AI_PRICE_CACHE_READ_PER_M = 0.10    # $0.10 / 1M cache-read tokens (10% of input)
+AI_PRICE_CACHE_WRITE_PER_M = 1.25   # $1.25 / 1M cache-write tokens (125% of input)
+
+# 每日/月度预算上限（美元）— 超过即熔断
+AI_DAILY_BUDGET_USD = 3.0           # Daily cap
+AI_MONTHLY_BUDGET_USD = 50.0        # Monthly cap
+
+# 研究报告缓存：同一个联系人多少天内复用已有报告
+AI_REPORT_CACHE_DAYS = 30
