@@ -21,3 +21,7 @@ pgdata/
 .idea/
 *.swp
 .DS_Store
+
+# === Backups (本地备份，不 commit)===
+backups/
+*.sql.gz
