@@ -27,12 +27,23 @@ router = APIRouter(prefix="/api/apollo", tags=["Apollo"])
 # === Request/Response schemas ===
 
 class SearchRequest(BaseModel):
-    """ICP search filters"""
-    person_titles: Optional[List[str]] = None       # e.g. ["VP of Engineering", "CTO"]
-    person_locations: Optional[List[str]] = None     # e.g. ["United States"]
-    industry_keywords: Optional[List[str]] = None    # e.g. ["SaaS", "FinTech"]
-    employee_ranges: Optional[List[str]] = None      # e.g. ["1,50", "51,200"]
-    company_domain: Optional[str] = None             # e.g. "techcorp.com"
+    """ICP search filters — mapped to Apollo API parameters"""
+    # Primary Search
+    q_organization_name: Optional[str] = None              # Company Name
+    company_domain: Optional[str] = None                   # Company Domain
+    q_organization_keyword_tags: Optional[List[str]] = None    # Keywords (industry/niche)
+    # 新增：LinkedIn URL / Person Name 都走 Apollo 的 free-text q_keywords
+    # New: LinkedIn URL + Person Name → Apollo free-text q_keywords
+    q_keywords: Optional[str] = None
+
+    # Refine filters
+    person_titles: Optional[List[str]] = None
+    person_seniorities: Optional[List[str]] = None
+    person_locations: Optional[List[str]] = None           # 支持多州 multi-state
+    organization_industry_tag_ids: Optional[List[str]] = None
+    employee_ranges: Optional[List[str]] = None
+    revenue_ranges: Optional[List[str]] = None
+
     page: int = 1
     per_page: int = 25
 
@@ -52,6 +63,56 @@ async def apollo_status(current_user: User = Depends(get_current_user)):
         "message": "Apollo API key is configured" if apollo_service.is_configured
                    else "Apollo API key not set. Add it in Settings or set APOLLO_API_KEY env var.",
     }
+
+
+@router.get("/test")
+async def test_apollo(current_user: User = Depends(get_current_user)):
+    """Temporary debug endpoint — test Apollo API with minimal request"""
+    import httpx
+
+    api_key = apollo_service.api_key
+    if not api_key:
+        return {"error": "No Apollo API key configured"}
+
+    url = "https://api.apollo.io/api/v1/mixed_people/api_search"
+
+    # Attempt 1: API key in header
+    headers = {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
+        "x-api-key": api_key,
+    }
+    payload = {
+        "person_locations": ["California, US"],
+        "per_page": 5,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r1 = await client.post(url, json=payload, headers=headers)
+        print(f"=== ATTEMPT 1 (key in header) === Status: {r1.status_code}")
+        print(f"Response: {r1.text[:500]}")
+
+        if r1.status_code == 200:
+            return {"attempt": 1, "method": "key_in_header", "status": r1.status_code, "data": r1.json()}
+
+        # Attempt 2: API key in body
+        headers2 = {"Content-Type": "application/json"}
+        payload2 = {
+            "api_key": api_key,
+            "person_locations": ["California, US"],
+            "per_page": 5,
+        }
+        r2 = await client.post(url, json=payload2, headers=headers2)
+        print(f"=== ATTEMPT 2 (key in body) === Status: {r2.status_code}")
+        print(f"Response: {r2.text[:500]}")
+
+        if r2.status_code == 200:
+            return {"attempt": 2, "method": "key_in_body", "status": r2.status_code, "data": r2.json()}
+
+        return {
+            "attempt1": {"method": "key_in_header", "status": r1.status_code, "response": r1.text[:300]},
+            "attempt2": {"method": "key_in_body", "status": r2.status_code, "response": r2.text[:300]},
+        }
 
 
 @router.post("/search")
@@ -75,10 +136,16 @@ async def search_people(
     # Call Apollo API
     try:
         result = await apollo_service.search_people(
+            q_organization_name=data.q_organization_name,
             person_titles=data.person_titles,
+            person_seniorities=data.person_seniorities,
             person_locations=data.person_locations,
+            organization_industry_tag_ids=data.organization_industry_tag_ids,
             organization_num_employees_ranges=data.employee_ranges,
+            organization_revenue_ranges=data.revenue_ranges,
+            q_organization_keyword_tags=data.q_organization_keyword_tags,
             q_organization_domains=data.company_domain,
+            q_keywords=data.q_keywords,
             page=data.page,
             per_page=data.per_page,
         )
@@ -124,7 +191,9 @@ async def search_people(
             "company_name": org.get("name"),
             "company_domain": org.get("primary_domain"),
             "industry": org.get("industry"),
+            "industry_keywords": org.get("keywords") or [],
             "company_size": _format_employee_count(org.get("estimated_num_employees")),
+            "annual_revenue": org.get("annual_revenue_printed") or _format_revenue(org.get("annual_revenue")),
             "photo_url": person.get("photo_url"),
             "city": person.get("city"),
             "state": person.get("state"),
@@ -141,6 +210,64 @@ async def search_people(
         "page": pagination.get("page", 1),
         "per_page": pagination.get("per_page", 25),
         "total_pages": pagination.get("total_pages", 0),
+    }
+
+
+class EnrichRequest(BaseModel):
+    """Apollo IDs to enrich (costs credits)"""
+    apollo_ids: List[str]
+
+
+@router.post("/enrich")
+async def enrich_people(
+    data: EnrichRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Enrich selected people — get email, phone, LinkedIn, company details.
+    CONSUMES Apollo credits (1 credit per person).
+    """
+    if not apollo_service.is_configured:
+        raise HTTPException(status_code=400, detail="Apollo API key not configured.")
+
+    if len(data.apollo_ids) > 25:
+        raise HTTPException(status_code=400, detail="Maximum 25 people per enrich request.")
+
+    try:
+        enriched = await apollo_service.enrich_people_bulk(data.apollo_ids)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Apollo enrichment error: {str(e)}")
+
+    # Build enriched results
+    results = []
+    for person in enriched:
+        if not person:
+            continue
+        org = person.get("organization", {}) or {}
+        phone_numbers = person.get("phone_numbers") or []
+        results.append({
+            "apollo_id": person.get("id"),
+            "first_name": person.get("first_name", ""),
+            "last_name": person.get("last_name", ""),
+            "email": person.get("email"),
+            "title": person.get("title"),
+            "phone": phone_numbers[0].get("sanitized_number") if phone_numbers else None,
+            "linkedin_url": person.get("linkedin_url"),
+            "company_name": org.get("name"),
+            "company_domain": org.get("primary_domain"),
+            "industry": org.get("industry"),
+            "industry_keywords": org.get("keywords") or [],
+            "company_size": _format_employee_count(org.get("estimated_num_employees")),
+            "annual_revenue": org.get("annual_revenue_printed") or _format_revenue(org.get("annual_revenue")),
+            "city": person.get("city"),
+            "state": person.get("state"),
+            "country": person.get("country"),
+        })
+
+    return {
+        "enriched": results,
+        "count": len(results),
+        "credits_used": len(results),
     }
 
 
@@ -232,9 +359,27 @@ async def import_people(
         "created": created,
         "updated": updated,
         "skipped": skipped,
+        "failed": 0,
         "total": created + updated,
         "message": f"Added {created} new contacts, updated {updated} existing.",
     }
+
+
+def _format_revenue(revenue) -> Optional[str]:
+    """Convert numeric annual revenue to human-readable string"""
+    if not revenue:
+        return None
+    try:
+        r = float(revenue)
+    except (ValueError, TypeError):
+        return None
+    if r >= 1_000_000_000:
+        return f"${r / 1_000_000_000:.1f}B"
+    elif r >= 1_000_000:
+        return f"${r / 1_000_000:.0f}M"
+    elif r >= 1_000:
+        return f"${r / 1_000:.0f}K"
+    return f"${r:.0f}"
 
 
 def _format_employee_count(count) -> Optional[str]:

@@ -57,6 +57,7 @@ class ApolloService:
         organization_revenue_ranges: Optional[list] = None,
         q_organization_keyword_tags: Optional[list] = None,
         q_organization_domains: Optional[str] = None,
+        q_keywords: Optional[str] = None,
         page: int = 1,
         per_page: int = 25,
     ) -> dict:
@@ -91,6 +92,9 @@ class ApolloService:
             data["q_organization_keyword_tags"] = q_organization_keyword_tags
         if q_organization_domains:
             data["q_organization_domains_list"] = [q_organization_domains]
+        if q_keywords:
+            # Apollo free-text search — 匹配人名、LinkedIn URL 等
+            data["q_keywords"] = q_keywords
 
         url = f"{APOLLO_BASE_URL}/v1/mixed_people/api_search"
         print(f"=== APOLLO REQUEST ===\nURL: {url}\nBody: {data}")
