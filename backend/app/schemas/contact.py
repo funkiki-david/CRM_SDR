@@ -12,8 +12,8 @@ import re
 class ContactCreate(BaseModel):
     """Create a new contact — matches Add Contact modal spec"""
     first_name: str
-    last_name: str
-    email: str
+    last_name: Optional[str] = ""           # 允许缺失（比如"Jeanne Sales"只有名）
+    email: Optional[str] = None             # 允许缺失（phone-only 线索）
     phone: Optional[str] = None
     title: Optional[str] = None
     company_name: Optional[str] = None
@@ -36,17 +36,19 @@ class ContactCreate(BaseModel):
 
     @field_validator("last_name")
     @classmethod
-    def last_name_not_blank(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Please enter a last name")
-        return v.strip()[:50]
+    def last_name_clean(cls, v: Optional[str]) -> str:
+        # 可选 —— 允许空
+        return (v or "").strip()[:50]
 
     @field_validator("email")
     @classmethod
-    def email_valid(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("Please enter a valid email")
+    def email_valid(cls, v: Optional[str]) -> Optional[str]:
+        """Email 可选。如果提供，必须是合法格式。"""
+        if v is None:
+            return None
         v = v.strip()[:255]
+        if not v:
+            return None
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
             raise ValueError("Please enter a valid email (like name@company.com)")
         return v.lower()

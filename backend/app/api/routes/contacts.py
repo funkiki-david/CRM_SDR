@@ -273,15 +273,18 @@ async def import_contacts(
     for row_num, raw_row in enumerate(reader, start=2):  # start=2 因为 1 是表头
         row = {normalized_fields[k]: (v or "").strip() for k, v in raw_row.items()}
 
-        if not row.get("email"):
-            failed.append({"row": row_num, "reason": "missing email"})
+        # Email 可选 —— 手机单联系人（Doug 的 CA 名单）没有 email 也能进
+        # Email is optional; phone-only leads are allowed (dedup by email if present)
+        if not row.get("first_name"):
+            failed.append({"row": row_num, "reason": "missing first_name"})
             continue
 
         payload = {
             "first_name": row.get("first_name") or "",
             "last_name": row.get("last_name") or "",
-            "email": row.get("email"),
         }
+        if row.get("email"):
+            payload["email"] = row.get("email")
         for key in ("phone", "title", "company_name", "company_domain",
                     "industry", "company_size", "city", "state",
                     "linkedin_url", "website", "notes"):
@@ -303,10 +306,14 @@ async def import_contacts(
             })
             continue
 
-        existing_q = await db.execute(
-            select(Contact).where(Contact.email == validated.email)
-        )
-        existing = existing_q.scalar_one_or_none()
+        # Email dedup — only possible when email present
+        # 没 email 的行直接创建，不走重复检测
+        existing = None
+        if validated.email:
+            existing_q = await db.execute(
+                select(Contact).where(Contact.email == validated.email)
+            )
+            existing = existing_q.scalar_one_or_none()
 
         if existing:
             if update_existing:
