@@ -95,7 +95,12 @@ class Contact(Base):
     )
 
     # === 关系 ===
-    owner: Mapped["User"] = relationship("User")
+    # 两个 FK 都指向 users.id，必须显式告诉 SQLAlchemy 用哪一列
+    # Both FKs point to users.id — must disambiguate via foreign_keys=
+    owner: Mapped["User"] = relationship("User", foreign_keys=[owner_id])
+    assigned_user: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[assigned_to]
+    )
     activities: Mapped[List["Activity"]] = relationship(
         "Activity", back_populates="contact", order_by="Activity.created_at.desc()"
     )
