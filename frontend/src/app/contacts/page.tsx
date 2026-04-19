@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/app-shell";
 import QuickEntry from "@/components/quick-entry";
@@ -100,7 +100,7 @@ function relativeDays(dateStr: string | null): string | null {
   return `Generated ${days} days ago`;
 }
 
-export default function ContactsPage() {
+function ContactsContent() {
   const searchParams = useSearchParams();
   const preselectedId = searchParams.get("id");
 
@@ -690,5 +690,22 @@ export default function ContactsPage() {
         }}
       />
     </AppShell>
+  );
+}
+
+
+// Wrap in <Suspense> — useSearchParams() requires it per Next.js 16
+// prerender rules. Without this, `npm run build` fails for this route.
+export default function ContactsPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell>
+          <div className="p-6 text-sm text-gray-400">Loading…</div>
+        </AppShell>
+      }
+    >
+      <ContactsContent />
+    </Suspense>
   );
 }
