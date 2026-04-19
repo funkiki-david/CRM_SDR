@@ -23,7 +23,7 @@ LOCAL_DB = dict(
     dbname="sdrcrm",
 )
 CLOUD_URL = "https://crmsdr-production.up.railway.app"
-ADMIN_EMAIL = "admin@amazonsolutions.us"
+ADMIN_EMAIL = "info@amazonsolutions.us"
 ADMIN_PASSWORD = "admin123"
 
 

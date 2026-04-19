@@ -54,7 +54,7 @@ async def init_db():
         if admin is None:
             # 第一次启动，创建 David 的 Admin 账号
             admin = User(
-                email="admin@amazonsolutions.us",
+                email="info@amazonsolutions.us",
                 hashed_password=hash_password("admin123"),  # 首次登录后请改密码！
                 full_name="David Zheng",
                 role=UserRole.ADMIN,
@@ -62,6 +62,6 @@ async def init_db():
             )
             session.add(admin)
             await session.commit()
-            print("✅ 默认 Admin 账号已创建: admin@amazonsolutions.us / admin123")
+            print("✅ 默认 Admin 账号已创建: info@amazonsolutions.us / admin123")
         else:
             print("✅ Admin 账号已存在，跳过创建")

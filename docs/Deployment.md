@@ -227,7 +227,7 @@ OPENAI_API_KEY=<你的 Key>
 浏览器访问：`https://[你的前端域名]`
 
 应该能看到登录页。尝试登录：
-- 邮箱：`admin@amazonsolutions.us`
+- 邮箱：`info@amazonsolutions.us`
 - 密码：`admin123`（你本地数据库的测试账号）
 
 **如果前端能连上后端，并且登录成功 → 部署完成！** 🎉
