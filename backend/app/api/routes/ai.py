@@ -30,6 +30,7 @@ from app.services.ai import (
     SYSTEM_PROMPT_RESEARCH_PERSON,
     SYSTEM_PROMPT_RESEARCH_COMPANY,
     SYSTEM_PROMPT_DRAFT_EMAIL,
+    SYSTEM_PROMPT_SUGGEST_TODOS,
 )
 from app.services.ai_budget import call_ai_with_limit
 
@@ -290,6 +291,87 @@ Sender name: {current_user.full_name}"""
         body = parts[1].strip()
 
     return {"subject": subject, "body": body}
+
+
+# === AI Suggested To-Do ===
+
+@router.get("/suggest-todos")
+async def suggest_todos(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    基于用户最近 30 天的活动，让 Claude 生成 3 条具体可执行的待办建议。
+    返回格式: [{category, title, reason, action}, ...]
+      - HIGH: 高优先级再联系
+      - OPPORTUNITY: 批量操作机会
+      - INSIGHT: 行为观察 / coaching
+    """
+    if not ai_service.ai_ready:
+        raise HTTPException(status_code=400, detail="Anthropic API key not configured.")
+
+    # 收集最近 30 天活动 — SDR 只看自己的
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    q = (
+        select(Activity)
+        .options(joinedload(Activity.contact), joinedload(Activity.user))
+        .where(Activity.created_at >= since)
+    )
+    if current_user.role == UserRole.SDR:
+        q = q.where(Activity.user_id == current_user.id)
+    q = q.order_by(Activity.created_at.desc()).limit(200)
+
+    result = await db.execute(q)
+    activities = result.unique().scalars().all()
+
+    if not activities:
+        return {"suggestions": [], "reason": "Not enough activity yet — log some calls/emails first."}
+
+    # 汇总成紧凑文本喂给 Claude
+    lines = []
+    for a in activities:
+        c_name = f"{a.contact.first_name} {a.contact.last_name}" if a.contact else "Unknown"
+        company = a.contact.company_name if a.contact and a.contact.company_name else ""
+        subj = (a.subject or "").strip()[:80]
+        content_snip = (a.content or "").strip()[:100].replace("\n", " ")
+        days_ago = (datetime.now(timezone.utc) - a.created_at).days
+        lines.append(
+            f"- [{a.activity_type.value}] {days_ago}d ago: {c_name}"
+            + (f" @ {company}" if company else "")
+            + (f" | {subj}" if subj else "")
+            + (f" — {content_snip}" if content_snip else "")
+        )
+    activity_text = "\n".join(lines)
+
+    prompt = f"""Below are the last 30 days of SDR activity (most recent first). Analyze this data and output exactly 3 to-do suggestions per the schema.
+
+ACTIVITY LOG ({len(activities)} entries):
+{activity_text}"""
+
+    try:
+        raw, _log = await call_ai_with_limit(
+            db=db,
+            user_id=current_user.id,
+            feature="suggest_todos",
+            call_fn=lambda: ai_service._call_claude_raw(
+                prompt, 1500, system=SYSTEM_PROMPT_SUGGEST_TODOS,
+            ),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"AI call failed: {e}")
+
+    # 解析 JSON 响应
+    cleaned = raw.strip().strip("`").strip()
+    if cleaned.startswith("json"):
+        cleaned = cleaned[4:].strip()
+    try:
+        suggestions = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return {"suggestions": [], "error": "AI returned invalid JSON", "raw": raw[:500]}
+
+    return {"suggestions": suggestions}
 
 
 # PAUSED: Smart Search — AI Search page removed from frontend

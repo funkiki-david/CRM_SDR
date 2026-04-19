@@ -1,36 +1,52 @@
 /**
- * Dashboard — The first thing an SDR sees when they log in
- * Top section: Today's follow-up action list (sorted by urgency)
- * Bottom section: Team activity feed (social-media style timeline)
+ * Dashboard — 2026 CRM 最佳实践版本
+ *
+ * 布局：
+ *   - Welcome header (Welcome back, David)
+ *   - Quick Stats: 4 个数字卡 (Contacts / Emails / Calls / Meetings)
+ *   - 60/40 两栏：
+ *       Left  (60%): Follow-Ups Needed + Activity Feed
+ *       Right (40%): AI Suggested To-Do
  */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/app-shell";
 import AddContact from "@/components/add-contact";
 import QuickEntry from "@/components/quick-entry";
 import EmailCompose from "@/components/email-compose";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { dashboardApi, activitiesApi } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { dashboardApi, activitiesApi, aiApi, authApi } from "@/lib/api";
 
-// === Type definitions ===
+// ==================== Types ====================
 
 interface FollowUp {
   lead_id: number;
   contact_id: number;
   contact_name: string;
+  contact_email: string | null;
+  contact_phone: string | null;
   company: string | null;
   title: string | null;
-  lead_status: string;
+  urgency: "overdue" | "today" | "upcoming";
   follow_up_date: string;
   follow_up_reason: string | null;
-  urgency: "overdue" | "today" | "upcoming";
   last_activity_date: string | null;
   last_activity_type: string | null;
   last_activity_summary: string | null;
+  last_activity_content: string | null;
+  days_since_last_contact: number | null;
   owner_name: string;
+}
+
+interface FollowUpsResponse {
+  grouped: { overdue: FollowUp[]; today: FollowUp[]; upcoming: FollowUp[] };
+  counts: { overdue: number; today: number; upcoming: number };
+  total: number;
 }
 
 interface ActivityItem {
@@ -44,271 +60,692 @@ interface ActivityItem {
   created_at: string;
 }
 
-// === Display helpers ===
-
-const urgencyStyles: Record<string, string> = {
-  overdue: "bg-red-50 text-red-700 border-red-200",
-  today: "bg-amber-50 text-amber-700 border-amber-200",
-  upcoming: "bg-blue-50 text-blue-700 border-blue-200",
-};
-
-const urgencyLabels: Record<string, string> = {
-  overdue: "Overdue",
-  today: "Due Today",
-  upcoming: "This Week",
-};
-
-const activityIcons: Record<string, string> = {
-  call: "\u260E",       // phone
-  email: "\u2709",      // envelope
-  linkedin: "\uD83D\uDD17", // link
-  meeting: "\uD83D\uDCC5",  // calendar
-  note: "\uD83D\uDCDD",     // memo
-};
-
-const activityVerbs: Record<string, string> = {
-  call: "had a call with",
-  email: "sent an email to",
-  linkedin: "messaged",
-  meeting: "had a meeting with",
-  note: "added a note for",
-};
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+interface QuickStats {
+  total_contacts: number;
+  emails_today: number;
+  calls_today: number;
+  meetings_this_week: number;
 }
 
+interface AISuggestion {
+  category: "HIGH" | "OPPORTUNITY" | "INSIGHT";
+  title: string;
+  reason: string;
+  action: string;
+}
+
+// ==================== Helpers ====================
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+function dateGroupLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today.getTime() - dd.getTime()) / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return d.toLocaleDateString("en-US", { weekday: "long" });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+const ACTIVITY_ICON: Record<string, string> = {
+  call: "📞", email: "📧", linkedin: "🔗", meeting: "🤝", note: "📝",
+};
+
+const ACTIVITY_VERB: Record<string, string> = {
+  call: "Called", email: "Emailed", linkedin: "Messaged", meeting: "Met with", note: "Noted about",
+};
+
+// ==================== Main Page ====================
+
 export default function DashboardPage() {
-  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
-  const [feed, setFeed] = useState<ActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [currentUserName, setCurrentUserName] = useState("");
+  const [stats, setStats] = useState<QuickStats | null>(null);
+  const [followUps, setFollowUps] = useState<FollowUpsResponse | null>(null);
+  const [loadingFollowUps, setLoadingFollowUps] = useState(true);
 
-  const [pipeline, setPipeline] = useState<Record<string, number>>({});
-
-  // Quick action dialogs
+  // Compose dialogs
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const [emailComposeOpen, setEmailComposeOpen] = useState(false);
+  const [emailContext, setEmailContext] = useState<{ id: number; name: string; email: string | null }>({
+    id: 0, name: "", email: null,
+  });
+
+  const loadFollowUps = useCallback(async () => {
+    setLoadingFollowUps(true);
+    try {
+      const data = await dashboardApi.getFollowUps() as FollowUpsResponse;
+      setFollowUps(data);
+    } catch {
+      setFollowUps({ grouped: { overdue: [], today: [], upcoming: [] }, counts: { overdue: 0, today: 0, upcoming: 0 }, total: 0 });
+    } finally {
+      setLoadingFollowUps(false);
+    }
+  }, []);
 
   useEffect(() => {
-    Promise.all([
-      dashboardApi.getFollowUps().catch(() => ({ follow_ups: [] })),
-      activitiesApi.feed().catch(() => []),
-      dashboardApi.getPipelineSummary().catch(() => ({})),
-    ]).then(([fuData, feedData, pipeData]) => {
-      setFollowUps(fuData.follow_ups || []);
-      setFeed(feedData || []);
-      setPipeline(pipeData || {});
-      setLoading(false);
-    });
-  }, []);
+    authApi.getMe().then((u: { full_name: string }) => setCurrentUserName(u.full_name)).catch(() => {});
+    dashboardApi.getQuickStats().then(setStats).catch(() => {});
+    loadFollowUps();
+  }, [loadFollowUps]);
+
+  const openEmail = (fu: FollowUp) => {
+    setEmailContext({ id: fu.contact_id, name: fu.contact_name, email: fu.contact_email });
+    setEmailComposeOpen(true);
+  };
 
   return (
     <AppShell>
-      <div className="max-w-4xl mx-auto px-6 py-6 space-y-8">
-        {/* === Quick Action Buttons === */}
-        <section>
-          <div className="grid grid-cols-3 gap-3">
-            <button
-              onClick={() => setAddContactOpen(true)}
-              className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-left"
-            >
-              <span className="text-xl">+</span>
-              <span className="text-sm font-medium text-gray-700">New Contact</span>
-            </button>
-            <button
-              onClick={() => setQuickEntryOpen(true)}
-              className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-left"
-            >
-              <span className="text-xl">&#9998;</span>
-              <span className="text-sm font-medium text-gray-700">Log Activity</span>
-            </button>
-            <button
-              onClick={() => setEmailComposeOpen(true)}
-              className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-left"
-            >
-              <span className="text-xl">&#9993;</span>
-              <span className="text-sm font-medium text-gray-700">Send Email</span>
-            </button>
+      <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+        {/* === Welcome header === */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
+            {currentUserName && (
+              <p className="text-sm text-gray-500 mt-0.5">Welcome back, {currentUserName.split(" ")[0]}</p>
+            )}
           </div>
-        </section>
-
-        {/* === Today's Follow-up Action List === */}
-        <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Today&apos;s Follow-ups
-          </h2>
-
-          {loading ? (
-            <p className="text-gray-400 text-sm">Loading...</p>
-          ) : followUps.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-gray-400">
-                No follow-ups scheduled. Add contacts and set follow-up dates to see them here.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-2">
-              {followUps.map((item) => (
-                <Link
-                  key={item.lead_id}
-                  href={`/contacts?id=${item.contact_id}`}
-                  className="block"
-                >
-                  <Card className={`border ${urgencyStyles[item.urgency]} hover:shadow-sm transition-shadow cursor-pointer`}>
-                    <CardContent className="py-3 px-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900">
-                              {item.contact_name}
-                            </span>
-                            {item.company && (
-                              <span className="text-sm text-gray-500">
-                                at {item.company}
-                              </span>
-                            )}
-                          </div>
-                          {/* Last activity summary */}
-                          {item.last_activity_summary && (
-                            <p className="text-sm text-gray-500 mt-0.5 truncate">
-                              Last: {item.last_activity_summary}
-                            </p>
-                          )}
-                          {/* Follow-up reason = suggested next action */}
-                          {item.follow_up_reason && (
-                            <p className="text-sm text-gray-600 mt-0.5">
-                              &rarr; {item.follow_up_reason}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 ml-4 shrink-0">
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${urgencyStyles[item.urgency]}`}
-                          >
-                            {urgencyLabels[item.urgency]}
-                          </Badge>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* === Team Activity Feed === */}
-        <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Activity Feed
-          </h2>
-
-          {loading ? (
-            <p className="text-gray-400 text-sm">Loading...</p>
-          ) : feed.length === 0 ? (
-            <Card>
-              <CardContent className="py-8 text-center text-gray-400">
-                No activities yet. Start logging calls, emails, and meetings to see them here.
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-1">
-              {feed.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-3 py-2.5 px-3 rounded-md hover:bg-gray-50 transition-colors"
-                >
-                  {/* Activity type icon */}
-                  <span className="text-lg mt-0.5 w-6 text-center shrink-0">
-                    {activityIcons[item.activity_type] || "\uD83D\uDCCB"}
-                  </span>
-
-                  {/* Activity description */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-700">
-                      <span className="font-medium">{item.user_name}</span>{" "}
-                      {activityVerbs[item.activity_type] || "interacted with"}{" "}
-                      <Link
-                        href={`/contacts?id=${item.contact_id}`}
-                        className="font-medium text-gray-900 hover:underline"
-                      >
-                        {item.contact_name}
-                      </Link>
-                    </p>
-                    {item.subject && (
-                      <p className="text-sm text-gray-500 truncate mt-0.5">
-                        {item.subject}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Timestamp */}
-                  <span className="text-xs text-gray-400 shrink-0 mt-0.5">
-                    {timeAgo(item.created_at)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* === Pipeline Overview === */}
-        <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Pipeline
-          </h2>
-          <div className="flex items-center gap-1 overflow-x-auto">
-            {[
-              { key: "new", label: "New", color: "bg-gray-100 text-gray-700" },
-              { key: "contacted", label: "Contacted", color: "bg-blue-50 text-blue-700" },
-              { key: "interested", label: "Interested", color: "bg-cyan-50 text-cyan-700" },
-              { key: "meeting_set", label: "Meeting", color: "bg-violet-50 text-violet-700" },
-              { key: "proposal", label: "Proposal", color: "bg-amber-50 text-amber-700" },
-              { key: "closed_won", label: "Won", color: "bg-green-50 text-green-700" },
-              { key: "closed_lost", label: "Lost", color: "bg-red-50 text-red-500" },
-            ].map((stage, i, arr) => (
-              <div key={stage.key} className="flex items-center">
-                <div className={`px-4 py-2.5 rounded-md text-center min-w-[80px] ${stage.color}`}>
-                  <p className="text-lg font-semibold">{pipeline[stage.key] || 0}</p>
-                  <p className="text-xs">{stage.label}</p>
-                </div>
-                {i < arr.length - 1 && (
-                  <span className="text-gray-300 mx-1">&rarr;</span>
-                )}
-              </div>
-            ))}
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setAddContactOpen(true)}>+ Contact</Button>
+            <Button size="sm" variant="outline" onClick={() => setQuickEntryOpen(true)}>✎ Log</Button>
           </div>
-        </section>
+        </div>
+
+        {/* === Quick Stats === */}
+        <div className="grid grid-cols-4 gap-3">
+          <StatCard icon="📊" label="Total Contacts" value={stats?.total_contacts ?? "—"} />
+          <StatCard icon="📧" label="Emails Sent Today" value={stats?.emails_today ?? "—"} />
+          <StatCard icon="📞" label="Calls Today" value={stats?.calls_today ?? "—"} />
+          <StatCard icon="🤝" label="Meetings This Week" value={stats?.meetings_this_week ?? "—"} />
+        </div>
+
+        {/* === 60 / 40 two-column === */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Left: 60% (3/5) — Follow-Ups + Activity Feed */}
+          <div className="lg:col-span-3 space-y-6">
+            <FollowUpsSection
+              loading={loadingFollowUps}
+              data={followUps}
+              onRefresh={loadFollowUps}
+              onEmail={openEmail}
+            />
+            <ActivityFeedSection />
+          </div>
+
+          {/* Right: 40% (2/5) — AI Suggested To-Do */}
+          <div className="lg:col-span-2 space-y-6">
+            <AISuggestionsSection />
+          </div>
+        </div>
       </div>
 
       {/* Quick action dialogs */}
       <AddContact
         open={addContactOpen}
         onClose={() => setAddContactOpen(false)}
-        onSuccess={() => { setAddContactOpen(false); window.location.reload(); }}
+        onSuccess={() => { setAddContactOpen(false); loadFollowUps(); }}
       />
       <QuickEntry
         open={quickEntryOpen}
         onClose={() => setQuickEntryOpen(false)}
-        onSuccess={() => { setQuickEntryOpen(false); window.location.reload(); }}
+        onSuccess={() => { setQuickEntryOpen(false); loadFollowUps(); }}
       />
       <EmailCompose
         open={emailComposeOpen}
         onClose={() => setEmailComposeOpen(false)}
-        contactId={0}
-        contactName=""
-        contactEmail={null}
+        contactId={emailContext.id}
+        contactName={emailContext.name}
+        contactEmail={emailContext.email}
         onSuccess={() => setEmailComposeOpen(false)}
       />
     </AppShell>
+  );
+}
+
+// ==================== StatCard ====================
+
+function StatCard({ icon, label, value }: { icon: string; label: string; value: number | string }) {
+  return (
+    <div className="p-4 bg-white rounded-lg border border-gray-200">
+      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5">
+        <span className="text-base">{icon}</span>
+        <span>{label}</span>
+      </div>
+      <p className="text-2xl font-semibold text-gray-900">{value}</p>
+    </div>
+  );
+}
+
+// ==================== Follow-Ups Needed ====================
+
+const URGENCY_STYLES: Record<string, { border: string; dot: string; label: string }> = {
+  overdue: { border: "border-l-red-500", dot: "🔴", label: "Overdue" },
+  today: { border: "border-l-amber-500", dot: "🟡", label: "Due Today" },
+  upcoming: { border: "border-l-blue-500", dot: "🔵", label: "Upcoming This Week" },
+};
+
+function FollowUpsSection({
+  loading, data, onRefresh, onEmail,
+}: {
+  loading: boolean;
+  data: FollowUpsResponse | null;
+  onRefresh: () => void;
+  onEmail: (fu: FollowUp) => void;
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ overdue: false, today: false, upcoming: false });
+
+  if (loading) {
+    return (
+      <Card><CardContent className="py-6 text-sm text-gray-400">Loading follow-ups…</CardContent></Card>
+    );
+  }
+
+  const total = data?.total ?? 0;
+  if (total === 0) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-gray-400 text-sm">
+          No follow-ups scheduled. Log an activity with a follow-up date to see it here.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const sections: Array<{ key: "overdue" | "today" | "upcoming"; items: FollowUp[] }> = [
+    { key: "overdue", items: data?.grouped.overdue ?? [] },
+    { key: "today", items: data?.grouped.today ?? [] },
+    { key: "upcoming", items: data?.grouped.upcoming ?? [] },
+  ];
+
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-3">
+        <h2 className="text-lg font-semibold text-gray-900">Follow-Ups Needed</h2>
+        <Badge variant="outline" className="text-xs">{total}</Badge>
+      </div>
+
+      <div className="space-y-5">
+        {sections.map(({ key, items }) => {
+          if (items.length === 0) return null;
+          const style = URGENCY_STYLES[key];
+          const isExpanded = expanded[key];
+          const shown = isExpanded ? items : items.slice(0, 3);
+          return (
+            <div key={key}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium text-gray-700">
+                  <span className="mr-1">{style.dot}</span>
+                  {style.label} <span className="text-gray-400">({items.length})</span>
+                </p>
+                {items.length > 3 && (
+                  <button
+                    onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    {isExpanded ? "Show Less" : `View All (${items.length})`}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {shown.map(item => (
+                  <FollowUpCard
+                    key={item.lead_id}
+                    fu={item}
+                    borderClass={style.border}
+                    onEmail={onEmail}
+                    onRefresh={onRefresh}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function FollowUpCard({
+  fu, borderClass, onEmail, onRefresh,
+}: {
+  fu: FollowUp;
+  borderClass: string;
+  onEmail: (fu: FollowUp) => void;
+  onRefresh: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [snoozeMenu, setSnoozeMenu] = useState(false);
+
+  const handleSnooze = async (days: number) => {
+    setBusy(true);
+    setSnoozeMenu(false);
+    try {
+      await dashboardApi.snoozeFollowUp(fu.lead_id, days);
+      onRefresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Snooze failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDone = async () => {
+    setBusy(true);
+    try {
+      await dashboardApi.completeFollowUp(fu.lead_id);
+      onRefresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const lastContactLine = fu.last_activity_date
+    ? `Last contact: ${fu.days_since_last_contact ?? 0} days ago · ${fu.last_activity_type ?? "Activity"}`
+    : "No prior contact";
+
+  const noteLine = fu.last_activity_content || fu.last_activity_summary || fu.follow_up_reason;
+
+  return (
+    <Card className={`border-l-4 ${borderClass} hover:shadow-sm transition-shadow`}>
+      <CardContent className="py-3 px-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <Link
+              href={`/contacts?id=${fu.contact_id}`}
+              className="font-medium text-sm text-gray-900 hover:underline"
+            >
+              {fu.contact_name}
+            </Link>
+            {fu.company && <span className="text-sm text-gray-500 ml-1">· {fu.company}</span>}
+            <p className="text-xs text-gray-500 mt-0.5">{lastContactLine}</p>
+            {noteLine && (
+              <p className="text-xs text-gray-600 mt-1 italic line-clamp-2">&ldquo;{noteLine}&rdquo;</p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100">
+          {fu.contact_phone && (
+            <a
+              href={`tel:${fu.contact_phone}`}
+              className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+            >
+              📞 Call
+            </a>
+          )}
+          {fu.contact_email && (
+            <button
+              onClick={() => onEmail(fu)}
+              className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+            >
+              📧 Email
+            </button>
+          )}
+          <div className="relative">
+            <button
+              onClick={() => setSnoozeMenu(v => !v)}
+              disabled={busy}
+              className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+            >
+              ⏰ Snooze
+            </button>
+            {snoozeMenu && (
+              <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-10 text-[11px] min-w-[120px]">
+                <button onClick={() => handleSnooze(1)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50">+ 1 day</button>
+                <button onClick={() => handleSnooze(3)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50">+ 3 days</button>
+                <button onClick={() => handleSnooze(7)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50">+ 1 week</button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={handleDone}
+            disabled={busy}
+            className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-green-50 hover:text-green-700 ml-auto"
+          >
+            ✓ Done
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ==================== Activity Feed Section ====================
+
+function ActivityFeedSection() {
+  const [items, setItems] = useState<ActivityItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [filterType, setFilterType] = useState<string>("all");
+  const [timeRange, setTimeRange] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const PER_PAGE = 15;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams({
+      limit: String(PER_PAGE),
+      offset: String((page - 1) * PER_PAGE),
+      time_range: timeRange,
+    });
+    if (filterType !== "all") params.set("activity_type", filterType);
+    if (search.trim()) params.set("search", search.trim());
+
+    try {
+      const data = await activitiesApi.feedPaged(params.toString()) as {
+        items: ActivityItem[]; total: number; has_more: boolean;
+      };
+      setItems(data.items);
+      setTotal(data.total);
+    } catch {
+      setItems([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, filterType, timeRange, search]);
+
+  // Debounce search
+  const searchTimer = useRef<number | null>(null);
+  useEffect(() => {
+    if (searchTimer.current) window.clearTimeout(searchTimer.current);
+    searchTimer.current = window.setTimeout(load, 300);
+    return () => { if (searchTimer.current) window.clearTimeout(searchTimer.current); };
+  }, [load]);
+
+  // Group by date — today expanded, others collapsed by default
+  const groups = useMemo(() => {
+    const map = new Map<string, ActivityItem[]>();
+    items.forEach(it => {
+      const label = dateGroupLabel(it.created_at);
+      if (!map.has(label)) map.set(label, []);
+      map.get(label)!.push(it);
+    });
+    return Array.from(map.entries());
+  }, [items]);
+
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleGroup = (label: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      return next;
+    });
+  };
+  const isCollapsed = (label: string) => label !== "Today" && !collapsed.has(`expanded:${label}`) && collapsed.has(label);
+  // default collapse non-"Today" — use different logic: keep collapsed set as "expanded exceptions"
+  // simplify: collapsed = set of group labels the user has manually collapsed OR auto-collapsed initially
+
+  // Auto-collapse all but "Today" on first data load
+  const firstRenderRef = useRef(true);
+  useEffect(() => {
+    if (firstRenderRef.current && items.length > 0) {
+      firstRenderRef.current = false;
+      const toCollapse = new Set<string>();
+      groups.forEach(([label]) => { if (label !== "Today") toCollapse.add(label); });
+      setCollapsed(toCollapse);
+    }
+  }, [items, groups]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold text-gray-900">Activity Feed</h2>
+        <Badge variant="outline" className="text-xs">{total}</Badge>
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2 mb-3 p-2 bg-gray-50 rounded border border-gray-200">
+        <select
+          value={filterType}
+          onChange={(e) => { setFilterType(e.target.value); setPage(1); }}
+          className="h-8 text-xs px-2 rounded border border-gray-200 bg-white"
+        >
+          <option value="all">All Types</option>
+          <option value="call">Calls</option>
+          <option value="email">Emails</option>
+          <option value="meeting">Meetings</option>
+          <option value="note">Notes</option>
+          <option value="linkedin">LinkedIn</option>
+        </select>
+        <select
+          value={timeRange}
+          onChange={(e) => { setTimeRange(e.target.value); setPage(1); }}
+          className="h-8 text-xs px-2 rounded border border-gray-200 bg-white"
+        >
+          <option value="all">All Time</option>
+          <option value="today">Today</option>
+          <option value="week">This Week</option>
+          <option value="month">This Month</option>
+        </select>
+        <Input
+          placeholder="🔍 Search contact or user..."
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          className="h-8 text-xs flex-1 min-w-[160px]"
+        />
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-gray-400 py-3">Loading…</p>
+      ) : items.length === 0 ? (
+        <Card><CardContent className="py-6 text-center text-sm text-gray-400">No activities match your filters.</CardContent></Card>
+      ) : (
+        <div className="space-y-4">
+          {groups.map(([label, rows]) => {
+            const isHidden = label !== "Today" && collapsed.has(label);
+            return (
+              <div key={label}>
+                <button
+                  onClick={() => toggleGroup(label)}
+                  className="flex items-center gap-2 text-xs font-medium text-gray-600 mb-1.5 hover:text-gray-900"
+                >
+                  <span>{isHidden ? "▶" : "▼"}</span>
+                  <span>{label}</span>
+                  <span className="text-gray-400">({rows.length})</span>
+                </button>
+                {!isHidden && (
+                  <div className="space-y-1 pl-1 border-l border-gray-100">
+                    {rows.map(a => <ActivityRow key={a.id} activity={a} />)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
+          <span>Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, total)} of {total}</span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage(p => p - 1)}
+            >
+              ← Prev
+            </Button>
+            <span>Page {page} of {totalPages}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage(p => p + 1)}
+            >
+              Next →
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ActivityRow({ activity }: { activity: ActivityItem }) {
+  const icon = ACTIVITY_ICON[activity.activity_type] || "📋";
+  const verb = ACTIVITY_VERB[activity.activity_type] || "Interacted with";
+  return (
+    <div className="pl-3 py-1.5 flex items-start gap-2 text-sm hover:bg-gray-50 rounded">
+      <span className="text-xs text-gray-400 shrink-0 w-16 mt-0.5">{formatTime(activity.created_at)}</span>
+      <span className="shrink-0 mt-0.5">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs">
+          <span className="text-gray-700">{activity.user_name}</span>
+          <span className="text-gray-400"> · </span>
+          <span>{verb}{" "}
+            <Link href={`/contacts?id=${activity.contact_id}`} className="text-gray-900 hover:underline">
+              {activity.contact_name}
+            </Link>
+          </span>
+        </p>
+        {activity.subject && (
+          <p className="text-xs text-gray-500 truncate mt-0.5">{activity.subject}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==================== AI Suggested To-Do ====================
+
+const CATEGORY_STYLES: Record<string, { icon: string; label: string; color: string }> = {
+  HIGH: { icon: "🔥", label: "HIGH PRIORITY", color: "bg-red-50 text-red-700 border-red-200" },
+  OPPORTUNITY: { icon: "💡", label: "OPPORTUNITY", color: "bg-amber-50 text-amber-700 border-amber-200" },
+  INSIGHT: { icon: "📊", label: "INSIGHT", color: "bg-blue-50 text-blue-700 border-blue-200" },
+};
+
+function AISuggestionsSection() {
+  const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = localStorage.getItem("ai_todos_dismissed") || "[]";
+      return new Set(JSON.parse(raw));
+    } catch { return new Set(); }
+  });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await aiApi.suggestTodos() as { suggestions: AISuggestion[]; error?: string };
+      setSuggestions(data.suggestions || []);
+      if (data.error) setError(data.error);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load suggestions");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const dismiss = (title: string) => {
+    const next = new Set(dismissed);
+    next.add(title);
+    setDismissed(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("ai_todos_dismissed", JSON.stringify(Array.from(next)));
+    }
+  };
+
+  const visible = suggestions.filter(s => !dismissed.has(s.title));
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold text-gray-900">🤖 AI Suggested To-Do</h2>
+        <button
+          onClick={load}
+          disabled={loading}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          {loading ? "Thinking…" : "Refresh"}
+        </button>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">Based on your last 30 days of activity</p>
+
+      {loading ? (
+        <Card><CardContent className="py-6 text-sm text-gray-400">Analyzing your activity…</CardContent></Card>
+      ) : error ? (
+        <Card><CardContent className="py-4 text-sm text-red-600">{error}</CardContent></Card>
+      ) : visible.length === 0 ? (
+        <Card>
+          <CardContent className="py-6 text-center text-sm text-gray-400">
+            {suggestions.length > 0
+              ? "All suggestions dismissed. Click Refresh for new ones."
+              : "Not enough activity to generate suggestions yet. Log some calls/emails first."}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {visible.map((s, i) => {
+            const style = CATEGORY_STYLES[s.category] || CATEGORY_STYLES.INSIGHT;
+            return (
+              <Card key={i} className="border-gray-200">
+                <CardContent className="py-3 px-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="outline" className={`text-[10px] py-0 px-1.5 ${style.color}`}>
+                      {style.icon} {i + 1}. {style.label}
+                    </Badge>
+                  </div>
+                  <p className="text-sm font-medium text-gray-900 mb-1.5">{s.title}</p>
+                  <p className="text-xs text-gray-600 mb-1.5">
+                    <span className="font-medium">Reason:</span> {s.reason}
+                  </p>
+                  <p className="text-xs text-gray-700 mb-2">
+                    <span className="font-medium">Suggested action:</span> {s.action}
+                  </p>
+                  <div className="flex gap-1.5 pt-2 border-t border-gray-100">
+                    <button
+                      onClick={() => alert("Create Task feature coming soon — for now, log the activity manually.")}
+                      className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+                    >
+                      + Create Task
+                    </button>
+                    <button
+                      onClick={() => dismiss(s.title)}
+                      className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50 ml-auto text-gray-500"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

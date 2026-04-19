@@ -64,8 +64,29 @@ export const authApi = {
  * Dashboard API
  */
 export const dashboardApi = {
-  /** Get today's follow-up action list */
+  /** Get today's follow-up action list (includes grouped + counts) */
   getFollowUps: () => request("/api/dashboard/follow-ups"),
+
+  /** Snooze a follow-up N days */
+  snoozeFollowUp: (leadId: number, days: number) =>
+    request(`/api/dashboard/follow-ups/${leadId}/snooze`, {
+      method: "PATCH",
+      body: JSON.stringify({ days }),
+    }),
+
+  /** Reschedule follow-up to specific date */
+  rescheduleFollowUp: (leadId: number, nextFollowUp: string, reason?: string) =>
+    request(`/api/dashboard/follow-ups/${leadId}/reschedule`, {
+      method: "PATCH",
+      body: JSON.stringify({ next_follow_up: nextFollowUp, follow_up_reason: reason }),
+    }),
+
+  /** Mark follow-up done (clear next_follow_up) */
+  completeFollowUp: (leadId: number) =>
+    request(`/api/dashboard/follow-ups/${leadId}/done`, { method: "PATCH" }),
+
+  /** Quick stats for top row */
+  getQuickStats: () => request("/api/dashboard/quick-stats"),
 
   /** Get pipeline stage counts */
   getPipelineSummary: () => request("/api/dashboard/pipeline-summary"),
@@ -193,8 +214,11 @@ export const activitiesApi = {
   listByContact: (contactId: number) =>
     request(`/api/activities/contact/${contactId}`),
 
-  /** Get team activity feed */
+  /** Get team activity feed (legacy — returns array) */
   feed: (limit = 30) => request(`/api/activities/feed?limit=${limit}`),
+
+  /** Paginated / filtered feed — returns {items, total, has_more} */
+  feedPaged: (queryString: string) => request(`/api/activities/feed?${queryString}`),
 };
 
 /**
@@ -366,4 +390,7 @@ export const aiApi = {
   /** Smart search (Claude reads activities directly) */
   search: (query: string, limit = 10) =>
     request("/api/ai/search", { method: "POST", body: JSON.stringify({ query, limit }) }),
+
+  /** AI Suggested To-Do — analyzes last 30d activity, returns 3 suggestions */
+  suggestTodos: () => request("/api/ai/suggest-todos"),
 };

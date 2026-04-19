@@ -9,7 +9,7 @@ Provides:
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -144,26 +144,72 @@ async def list_contact_activities(
 
 @router.get("/feed")
 async def team_activity_feed(
-    limit: int = Query(30, ge=1, le=100),
+    limit: int = Query(15, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    activity_type: Optional[str] = Query(None, description="Filter: call/email/linkedin/meeting/note"),
+    time_range: str = Query("all", description="today | week | month | all"),
+    search: Optional[str] = Query(None, description="Search contact or user name"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Team activity feed for the dashboard
-    Shows recent activities across the team, like a social feed:
-    "David sent a cold email to John Smith"
-    "Lisa had a call with Sarah Lee"
+    Team activity feed for the dashboard.
+    Supports pagination + filters (type / time range / search).
+    Response: {items, total, has_more}
     """
-    query = (
+    from datetime import datetime, timedelta, timezone as tz
+
+    base_query = (
         select(Activity)
         .options(joinedload(Activity.contact), joinedload(Activity.user))
     )
 
-    # Role-based filtering: Admin & Manager see all, SDR sees only their own
+    # Role-based filtering
     if current_user.role == UserRole.SDR:
-        query = query.where(Activity.user_id == current_user.id)
+        base_query = base_query.where(Activity.user_id == current_user.id)
 
-    query = query.order_by(Activity.created_at.desc()).limit(limit)
-    result = await db.execute(query)
+    # Type filter
+    if activity_type:
+        try:
+            at = ActivityType(activity_type)
+            base_query = base_query.where(Activity.activity_type == at)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid activity_type: {activity_type}")
+
+    # Time range filter
+    now = datetime.now(tz.utc)
+    if time_range == "today":
+        base_query = base_query.where(
+            Activity.created_at >= now.replace(hour=0, minute=0, second=0, microsecond=0)
+        )
+    elif time_range == "week":
+        base_query = base_query.where(Activity.created_at >= now - timedelta(days=7))
+    elif time_range == "month":
+        base_query = base_query.where(Activity.created_at >= now - timedelta(days=30))
+
+    # Search — contact name (first+last) OR user name
+    if search:
+        term = f"%{search.strip()}%"
+        base_query = base_query.join(Activity.contact).outerjoin(Activity.user).where(
+            or_(
+                Contact.first_name.ilike(term),
+                Contact.last_name.ilike(term),
+                Contact.company_name.ilike(term),
+                User.full_name.ilike(term),
+            )
+        )
+
+    # Total count（for pagination UI）
+    count_q = select(func.count()).select_from(base_query.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+
+    # Paginated results
+    paged_query = base_query.order_by(Activity.created_at.desc()).offset(offset).limit(limit)
+    result = await db.execute(paged_query)
     activities = result.unique().scalars().all()
-    return [_build_activity_response(a) for a in activities]
+
+    return {
+        "items": [_build_activity_response(a) for a in activities],
+        "total": total,
+        "has_more": (offset + len(activities)) < total,
+    }

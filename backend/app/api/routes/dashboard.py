@@ -3,9 +3,11 @@ Dashboard API — Today's follow-up action list
 Returns leads that need follow-up today, sorted by urgency
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select, func, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -16,7 +18,7 @@ from app.core.config import AI_DAILY_BUDGET_USD, AI_MONTHLY_BUDGET_USD
 from app.models.user import User, UserRole
 from app.models.lead import Lead, LeadStatus
 from app.models.contact import Contact
-from app.models.activity import Activity
+from app.models.activity import Activity, ActivityType
 from app.services.ai_budget import (
     get_spend_today,
     get_spend_month,
@@ -83,10 +85,18 @@ async def get_follow_ups(
         else:
             urgency = "upcoming"
 
+        # 计算上次联系多少天前 days since last contact
+        days_since_last = None
+        if last_activity:
+            delta = datetime.now(timezone.utc) - last_activity.created_at
+            days_since_last = delta.days
+
         follow_ups.append({
             "lead_id": lead.id,
             "contact_id": lead.contact_id,
             "contact_name": f"{lead.contact.first_name} {lead.contact.last_name}",
+            "contact_email": lead.contact.email,
+            "contact_phone": lead.contact.phone,
             "company": lead.contact.company_name,
             "title": lead.contact.title,
             "lead_status": lead.status.value,
@@ -96,10 +106,138 @@ async def get_follow_ups(
             "last_activity_date": str(last_activity.created_at) if last_activity else None,
             "last_activity_type": last_activity.activity_type.value if last_activity else None,
             "last_activity_summary": last_activity.subject or last_activity.ai_summary if last_activity else None,
+            "last_activity_content": (last_activity.content or "")[:200] if last_activity else None,
+            "days_since_last_contact": days_since_last,
             "owner_name": lead.owner.full_name,
         })
 
-    return {"follow_ups": follow_ups, "total": len(follow_ups)}
+    # 按紧急程度分组 Group by urgency for easier frontend rendering
+    grouped = {"overdue": [], "today": [], "upcoming": []}
+    for f in follow_ups:
+        grouped[f["urgency"]].append(f)
+
+    return {
+        "follow_ups": follow_ups,  # 保留扁平数组向后兼容
+        "grouped": grouped,
+        "counts": {k: len(v) for k, v in grouped.items()},
+        "total": len(follow_ups),
+    }
+
+
+# === Snooze / Done / Reschedule ===
+
+class SnoozeRequest(BaseModel):
+    days: int  # 延后多少天 (1 / 3 / 7 常见)
+
+
+@router.patch("/follow-ups/{lead_id}/snooze")
+async def snooze_follow_up(
+    lead_id: int,
+    data: SnoozeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Snooze a follow-up by N days (推迟跟进日期)"""
+    lead = await db.get(Lead, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    if current_user.role == UserRole.SDR and lead.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if data.days < 1 or data.days > 90:
+        raise HTTPException(status_code=400, detail="Days must be between 1 and 90")
+
+    base = lead.next_follow_up or date.today()
+    lead.next_follow_up = base + timedelta(days=data.days)
+    await db.flush()
+    return {"lead_id": lead.id, "next_follow_up": str(lead.next_follow_up)}
+
+
+class RescheduleRequest(BaseModel):
+    next_follow_up: str  # ISO date YYYY-MM-DD
+    follow_up_reason: Optional[str] = None
+
+
+@router.patch("/follow-ups/{lead_id}/reschedule")
+async def reschedule_follow_up(
+    lead_id: int,
+    data: RescheduleRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Reschedule follow-up to a specific date"""
+    lead = await db.get(Lead, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    if current_user.role == UserRole.SDR and lead.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    try:
+        lead.next_follow_up = date.fromisoformat(data.next_follow_up)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format (expected YYYY-MM-DD)")
+    if data.follow_up_reason is not None:
+        lead.follow_up_reason = data.follow_up_reason
+    await db.flush()
+    return {"lead_id": lead.id, "next_follow_up": str(lead.next_follow_up)}
+
+
+@router.patch("/follow-ups/{lead_id}/done")
+async def mark_follow_up_done(
+    lead_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark follow-up as completed (clear next_follow_up)"""
+    lead = await db.get(Lead, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    if current_user.role == UserRole.SDR and lead.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    lead.next_follow_up = None
+    lead.follow_up_reason = None
+    await db.flush()
+    return {"lead_id": lead.id, "status": "done"}
+
+
+@router.get("/quick-stats")
+async def get_quick_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Quick Stats 模组 —— Dashboard 顶部 4 个数字
+      - total_contacts: 当前用户可见的联系人总数
+      - emails_today / calls_today / meetings_this_week: 按活动类型 + 时间过滤
+    """
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=7)
+
+    # Contacts (角色权限)
+    contact_q = select(func.count(Contact.id))
+    if current_user.role == UserRole.SDR:
+        contact_q = contact_q.where(Contact.owner_id == current_user.id)
+    total_contacts = (await db.execute(contact_q)).scalar() or 0
+
+    # Activity counts — SDR only sees own activity, M/A 看全部
+    def _act_count(activity_type: ActivityType, since: datetime):
+        q = select(func.count(Activity.id)).where(
+            Activity.activity_type == activity_type,
+            Activity.created_at >= since,
+        )
+        if current_user.role == UserRole.SDR:
+            q = q.where(Activity.user_id == current_user.id)
+        return q
+
+    emails_today = (await db.execute(_act_count(ActivityType.EMAIL, today_start))).scalar() or 0
+    calls_today = (await db.execute(_act_count(ActivityType.CALL, today_start))).scalar() or 0
+    meetings_week = (await db.execute(_act_count(ActivityType.MEETING, week_start))).scalar() or 0
+
+    return {
+        "total_contacts": total_contacts,
+        "emails_today": emails_today,
+        "calls_today": calls_today,
+        "meetings_this_week": meetings_week,
+    }
 
 
 @router.get("/pipeline-summary")

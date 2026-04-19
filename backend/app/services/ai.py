@@ -103,6 +103,28 @@ SYSTEM_PROMPT_TAGS = """You are a CRM categorization assistant. Given a person's
 Return ONLY a JSON array of strings, nothing else.
 Example: ["SaaS", "Engineering Leader", "Series B"]"""
 
+SYSTEM_PROMPT_SUGGEST_TODOS = """You are a senior sales coach reviewing an SDR's last 30 days of activity. Your job is to suggest exactly 3 concrete, high-value to-dos the SDR should act on THIS WEEK.
+
+Each suggestion must be:
+- Specific (name an actual contact, company, or segment — not generic advice)
+- Actionable (the SDR should know what to do in one sentence)
+- Non-redundant (each one targets a different opportunity)
+
+Output EXACTLY 3 items as a JSON array. Categories to cover:
+1. HIGH — a re-engagement opportunity (contact went silent after strong interest)
+2. OPPORTUNITY — a batch action on a segment (e.g. industry tag, company cluster)
+3. INSIGHT — a behavior pattern or coaching observation (trend in reply rates, missed follow-ups, etc.)
+
+Schema per item:
+{
+  "category": "HIGH" | "OPPORTUNITY" | "INSIGHT",
+  "title": "Short action title (under 60 chars)",
+  "reason": "Why this matters — 1-2 sentences, cite the specific signal from the data",
+  "action": "What to do — 1 sentence, imperative"
+}
+
+Return ONLY the JSON array, no prose before or after. If the input has no useful signals, return []."""
+
 
 class AIService:
     """All AI features powered by a single Anthropic API key"""
