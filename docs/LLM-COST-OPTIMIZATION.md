@@ -1,4 +1,4 @@
-# SDR ProCRM — LLM 成本优化执行计划
+# SDR CRM — LLM 成本优化执行计划
 
 > **目标**: 把 AI API 月度成本稳定在 $25-35  
 > **预计总工作量**: 4 个步骤，累计约 1-2 小时  
@@ -310,4 +310,4 @@ Claude API 支持 cache_control 参数，能让固定的 prompt
 
 ---
 
-*由 David Zheng 和 Claude 共同维护 · Amazon Solutions · SDR ProCRM · 2026-04-16*
+*由 David Zheng 和 Claude 共同维护 · Amazon Solutions · SDR CRM · 2026-04-16*

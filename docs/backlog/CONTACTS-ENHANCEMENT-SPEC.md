@@ -1,4 +1,4 @@
-# SDR ProCRM — Contacts 页面增强功能详细规格
+# SDR CRM — Contacts 页面增强功能详细规格
 
 > **功能**: Add Contact + Import CSV + Export CSV  
 > **目标**: 把手动指令给 Claude Code，不需要反复修改  

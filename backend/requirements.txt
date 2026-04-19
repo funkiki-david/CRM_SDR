@@ -1,4 +1,4 @@
-# === SDR ProCRM 后端依赖 ===
+# === SDR CRM 后端依赖 ===
 
 # Web 框架
 fastapi==0.115.12

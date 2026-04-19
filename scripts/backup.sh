@@ -1,5 +1,5 @@
 #!/bin/bash
-# SDR ProCRM — 每日 Postgres 备份脚本
+# SDR CRM — 每日 Postgres 备份脚本
 # Daily Postgres backup, keeps last 30 days
 #
 # 用法 Usage:

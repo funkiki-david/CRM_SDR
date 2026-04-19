@@ -1,4 +1,4 @@
-# SDR ProCRM - Project Memory
+# SDR CRM - Project Memory
 
 ## 项目简介
 专为 SDR 销售员设计的智能 CRM，集成 Apollo.io + AI + 向量数据库。

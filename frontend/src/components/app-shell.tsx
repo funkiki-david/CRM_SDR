@@ -81,7 +81,7 @@ export default function AppShell({ children, quickEntryContactId }: AppShellProp
       {/* Top navigation bar */}
       <header className="border-b border-gray-200 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <h1 className="text-lg font-semibold text-gray-900">SDR ProCRM</h1>
+          <h1 className="text-lg font-semibold text-gray-900">SDR CRM</h1>
           <nav className="flex items-center gap-1">
             {navLinks.map((link) => (
               <Link

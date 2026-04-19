@@ -1,4 +1,4 @@
-# SDR ProCRM — 项目规划 v2
+# SDR CRM — 项目规划 v2
 
 > **项目**: SDR 智能 CRM  
 > **日期**: 2026-04-14  
@@ -216,7 +216,7 @@ SDR 勾选要导入的人
 
 ```bash
 # 1. 打开终端，创建项目
-mkdir sdr-procrm && cd sdr-procrm
+mkdir sdr-crm && cd sdr-crm
 
 # 2. 启动 Claude Code
 claude
@@ -234,7 +234,7 @@ claude
 在项目文件夹里创建这个文件，Claude Code 每次启动都会读它：
 
 ```markdown
-# SDR ProCRM - Project Memory
+# SDR CRM - Project Memory
 
 ## 项目简介
 专为 SDR 销售员设计的智能 CRM，集成 Apollo.io + AI + 向量数据库。

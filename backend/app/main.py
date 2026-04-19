@@ -1,5 +1,5 @@
 """
-SDR ProCRM — FastAPI 主应用入口
+SDR CRM — FastAPI 主应用入口
 启动命令：uvicorn app.main:app --reload
 """
 
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
 
 # 创建 FastAPI 应用
 app = FastAPI(
-    title="SDR ProCRM API",
+    title="SDR CRM API",
     description="SDR 智能 CRM 系统后端 API",
     version="0.1.0",
     lifespan=lifespan,
@@ -74,7 +74,7 @@ app.include_router(users_router)
 @app.get("/")
 async def root():
     """健康检查 — 打开浏览器访问 localhost:8000 看到这个就说明后端在运行"""
-    return {"status": "ok", "message": "SDR ProCRM API is running"}
+    return {"status": "ok", "message": "SDR CRM API is running"}
 
 
 @app.get("/health")

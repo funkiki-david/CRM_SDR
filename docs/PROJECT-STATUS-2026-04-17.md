@@ -1,4 +1,4 @@
-# SDR ProCRM — 项目完整现状总结
+# SDR CRM — 项目完整现状总结
 
 > **日期**: 2026-04-17 (Day 7)
 > **用途**: 把这份文档交给 Claude（或任何 AI 助手），即可获得项目完整上下文。也供 David 做全局盘点、决定删减方向。
@@ -93,7 +93,7 @@
 23f8803  chore: update frontend submodule ref
 646503d  docs: 整合核心文档 v3
 da6b1f2  Add deployment TODOs and optimizations checklist
-72d4914  Add complete SDR ProCRM system
+72d4914  Add complete SDR CRM system
 27dc26a  Initial commit
 ```
 

@@ -1,5 +1,5 @@
 /**
- * Login Page — Entry point for SDR ProCRM
+ * Login Page — Entry point for SDR CRM
  * Clean white design with email + password fields
  */
 "use client";
@@ -43,7 +43,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-semibold text-gray-900">
-            SDR ProCRM
+            SDR CRM
           </CardTitle>
           <p className="text-sm text-gray-500 mt-1">Sign in to your account</p>
         </CardHeader>

@@ -1,4 +1,4 @@
-# === SDR ProCRM — Docker Compose 服务编排 ===
+# === SDR CRM — Docker Compose 服务编排 ===
 # 启动命令：docker compose up
 # 停止命令：docker compose down
 # 重新构建：docker compose up --build

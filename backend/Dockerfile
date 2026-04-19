@@ -1,4 +1,4 @@
-# === SDR ProCRM 后端 Dockerfile ===
+# === SDR CRM 后端 Dockerfile ===
 # 基于 Python 3.12 精简版
 
 FROM python:3.12-slim
