@@ -490,19 +490,26 @@ async def suggest_todos(
     result = await db.execute(q)
     activities = result.unique().scalars().all()
 
+    # 空活动：不调 AI，直接返回空建议 + 用户友好的 message
+    # Empty DB (fresh deploy): skip AI, return empty + actionable message
     if not activities:
-        return {"suggestions": [], "reason": "Not enough activity yet — log some calls/emails first."}
+        return {
+            "suggestions": [],
+            "message": "No activity data yet. Start logging activities to get AI suggestions.",
+        }
 
-    # 汇总成紧凑文本喂给 Claude
+    # 汇总活动，附带 contact_id=N 让 AI 能引用
+    # Compact activity log — include contact_id=N so the model can cite it
     lines = []
     for a in activities:
         c_name = f"{a.contact.first_name} {a.contact.last_name}" if a.contact else "Unknown"
         company = a.contact.company_name if a.contact and a.contact.company_name else ""
+        cid = a.contact_id if a.contact_id else "null"
         subj = (a.subject or "").strip()[:80]
         content_snip = (a.content or "").strip()[:100].replace("\n", " ")
         days_ago = (datetime.now(timezone.utc) - a.created_at).days
         lines.append(
-            f"- [{a.activity_type.value}] {days_ago}d ago: {c_name}"
+            f"- [{a.activity_type.value}] {days_ago}d ago: contact_id={cid} {c_name}"
             + (f" @ {company}" if company else "")
             + (f" | {subj}" if subj else "")
             + (f" — {content_snip}" if content_snip else "")
@@ -512,7 +519,9 @@ async def suggest_todos(
     prompt = f"""Below are the last 30 days of SDR activity (most recent first). Analyze this data and output exactly 3 to-do suggestions per the schema.
 
 ACTIVITY LOG ({len(activities)} entries):
-{activity_text}"""
+{activity_text}
+
+Remember: respond ONLY with valid JSON. No markdown. No backticks. No preamble."""
 
     try:
         raw, _log = await call_ai_with_limit(
@@ -526,18 +535,76 @@ ACTIVITY LOG ({len(activities)} entries):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"AI call failed: {e}")
+        # AI 调用失败（网络 / 熔断 / 上游 500）→ 返回空建议，不抛 500 给前端
+        return {
+            "suggestions": [],
+            "message": f"AI temporarily unavailable: {str(e)[:120]}. Please try again later.",
+        }
 
-    # 解析 JSON 响应
-    cleaned = raw.strip().strip("`").strip()
-    if cleaned.startswith("json"):
-        cleaned = cleaned[4:].strip()
+    parsed = _parse_suggestions_json(raw)
+    if parsed is None:
+        # 再兜底一层 —— AI 输出不是合法 JSON，降级为空建议
+        return {
+            "suggestions": [],
+            "message": "AI returned unexpected format. Please refresh to try again.",
+        }
+    return {"suggestions": parsed}
+
+
+def _parse_suggestions_json(raw: str):
+    """
+    鲁棒 JSON 解析：
+    1. strip markdown code fence (``` / ```json)
+    2. 提取第一个 {...} 对象块
+    3. json.loads
+    4. 检查 suggestions 字段 —— 对象无 suggestions 时兜底到数组包装
+
+    成功返回 suggestions 数组；失败返回 None。
+    """
+    if not raw:
+        return None
+    s = raw.strip()
+
+    # Strip markdown code fence variants
+    # ```json ... ``` or ``` ... ```
+    if s.startswith("```"):
+        s = s.split("\n", 1)[1] if "\n" in s else s[3:]
+        if s.endswith("```"):
+            s = s[:-3]
+        s = s.strip()
+        # 若首行是 "json" 裸字符（Claude 偶尔这么做）
+        if s.startswith("json\n") or s.startswith("json\r"):
+            s = s.split("\n", 1)[1]
+
+    # 抓第一个 {...}（如果有 preamble 文字），退化到整个 s
+    # Find outermost {...} block if there's any preamble/commentary
+    first = s.find("{")
+    last = s.rfind("}")
+    if first != -1 and last > first:
+        s = s[first:last + 1]
+    else:
+        # 也可能是 bare array
+        first_a = s.find("[")
+        last_a = s.rfind("]")
+        if first_a != -1 and last_a > first_a:
+            s = s[first_a:last_a + 1]
+        else:
+            return None
+
     try:
-        suggestions = json.loads(cleaned)
+        data = json.loads(s)
     except json.JSONDecodeError:
-        return {"suggestions": [], "error": "AI returned invalid JSON", "raw": raw[:500]}
+        return None
 
-    return {"suggestions": suggestions}
+    # 支持 3 种返回形态：{"suggestions": [...]} / [...] / {单个建议}
+    if isinstance(data, dict) and "suggestions" in data and isinstance(data["suggestions"], list):
+        return data["suggestions"]
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict) and "priority" in data:
+        # 单个建议对象，包装成数组
+        return [data]
+    return None
 
 
 # PAUSED: Smart Search — AI Search page removed from frontend

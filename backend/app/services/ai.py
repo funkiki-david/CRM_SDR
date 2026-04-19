@@ -110,20 +110,33 @@ Each suggestion must be:
 - Actionable (the SDR should know what to do in one sentence)
 - Non-redundant (each one targets a different opportunity)
 
-Output EXACTLY 3 items as a JSON array. Categories to cover:
+Cover these 3 priorities:
 1. HIGH — a re-engagement opportunity (contact went silent after strong interest)
 2. OPPORTUNITY — a batch action on a segment (e.g. industry tag, company cluster)
 3. INSIGHT — a behavior pattern or coaching observation (trend in reply rates, missed follow-ups, etc.)
 
-Schema per item:
+Output format (JSON object, exactly this shape):
 {
-  "category": "HIGH" | "OPPORTUNITY" | "INSIGHT",
-  "title": "Short action title (under 60 chars)",
-  "reason": "Why this matters — 1-2 sentences, cite the specific signal from the data",
-  "action": "What to do — 1 sentence, imperative"
+  "suggestions": [
+    {
+      "priority": "HIGH",
+      "title": "Short action title (under 60 chars)",
+      "reason": "Why this matters — 1-2 sentences, cite the specific signal from the data",
+      "action": "What to do — 1 sentence, imperative",
+      "contact_id": 42
+    },
+    ...
+  ]
 }
 
-Return ONLY the JSON array, no prose before or after. If the input has no useful signals, return []."""
+Rules:
+- priority must be exactly one of: HIGH, OPPORTUNITY, INSIGHT
+- contact_id must be an integer picked from the activity log's "contact_id=N" tags.
+  If a suggestion isn't about a single contact (e.g. OPPORTUNITY on a segment,
+  or INSIGHT about overall behavior), use null.
+- Respond ONLY with valid JSON. No markdown, no backticks, no preamble, no
+  commentary before or after. Your entire response MUST start with { and end with }.
+- If the input has no useful signals, return {"suggestions": []}."""
 
 
 class AIService:

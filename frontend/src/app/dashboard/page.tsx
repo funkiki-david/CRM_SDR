@@ -70,10 +70,16 @@ interface QuickStats {
 }
 
 interface AISuggestion {
-  category: "HIGH" | "OPPORTUNITY" | "INSIGHT";
+  priority: "HIGH" | "OPPORTUNITY" | "INSIGHT";
   title: string;
   reason: string;
   action: string;
+  contact_id?: number | null;
+}
+
+interface AISuggestionsResponse {
+  suggestions: AISuggestion[];
+  message?: string;
 }
 
 // ==================== Helpers ====================
@@ -682,7 +688,7 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
 
 // ==================== AI Suggested To-Do ====================
 
-const CATEGORY_STYLES: Record<string, { icon: string; label: string; color: string }> = {
+const PRIORITY_STYLES: Record<string, { icon: string; label: string; color: string }> = {
   HIGH: { icon: "🔥", label: "HIGH PRIORITY", color: "bg-red-50 text-red-700 border-red-200" },
   OPPORTUNITY: { icon: "💡", label: "OPPORTUNITY", color: "bg-amber-50 text-amber-700 border-amber-200" },
   INSIGHT: { icon: "📊", label: "INSIGHT", color: "bg-blue-50 text-blue-700 border-blue-200" },
@@ -690,6 +696,7 @@ const CATEGORY_STYLES: Record<string, { icon: string; label: string; color: stri
 
 function AISuggestionsSection() {
   const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(() => {
@@ -703,10 +710,11 @@ function AISuggestionsSection() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setMessage(null);
     try {
-      const data = await aiApi.suggestTodos() as { suggestions: AISuggestion[]; error?: string };
+      const data = await aiApi.suggestTodos() as AISuggestionsResponse;
       setSuggestions(data.suggestions || []);
-      if (data.error) setError(data.error);
+      if (data.message) setMessage(data.message);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load suggestions");
     } finally {
@@ -750,13 +758,15 @@ function AISuggestionsSection() {
           <CardContent className="py-6 text-center text-sm text-gray-400">
             {suggestions.length > 0
               ? "All suggestions dismissed. Click Refresh for new ones."
-              : "Not enough activity to generate suggestions yet. Log some calls/emails first."}
+              : message
+                ? message
+                : "No suggestions yet — start logging activities to get AI recommendations!"}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-3">
           {visible.map((s, i) => {
-            const style = CATEGORY_STYLES[s.category] || CATEGORY_STYLES.INSIGHT;
+            const style = PRIORITY_STYLES[s.priority] || PRIORITY_STYLES.INSIGHT;
             return (
               <Card key={i} className="border-gray-200">
                 <CardContent className="py-3 px-4">
