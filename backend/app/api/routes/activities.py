@@ -55,9 +55,7 @@ async def create_activity(
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    # Check ownership (SDR can only log for their own contacts)
-    if current_user.role == UserRole.SDR and contact.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
+    # Team-shared: any logged-in user can log activity against any contact.
 
     # Validate activity type
     try:
@@ -127,8 +125,7 @@ async def list_contact_activities(
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    if current_user.role == UserRole.SDR and contact.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
+    # Team-shared: any user can view any contact's activity timeline.
 
     result = await db.execute(
         select(Activity)
@@ -163,10 +160,7 @@ async def team_activity_feed(
         select(Activity)
         .options(joinedload(Activity.contact), joinedload(Activity.user))
     )
-
-    # Role-based filtering
-    if current_user.role == UserRole.SDR:
-        base_query = base_query.where(Activity.user_id == current_user.id)
+    # Team-shared feed: everyone sees everyone's activities.
 
     # Type filter
     if activity_type:

@@ -69,14 +69,15 @@ def _parse_tags(raw: str) -> list[str]:
 
 def _apply_ownership_filter(query, user: User):
     """
-    Role-based data filtering:
-      Admin & Manager → see all contacts
-      SDR → only see contacts they own
+    Team-shared data model: every logged-in user (Admin / Manager / SDR)
+    sees all contacts. assigned_to marks "who works the contact" but does
+    not gate read access.
+
+    Kept as a no-op function so we can reintroduce per-role filtering later
+    without touching all call sites.
     """
-    if user.role in (UserRole.ADMIN, UserRole.MANAGER):
-        return query  # Full access
-    else:
-        return query.where(Contact.owner_id == user.id)
+    _ = user  # reserved for future filtering
+    return query
 
 
 @router.get("", response_model=ContactListResponse)

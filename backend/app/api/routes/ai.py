@@ -483,8 +483,7 @@ async def suggest_todos(
         .options(joinedload(Activity.contact), joinedload(Activity.user))
         .where(Activity.created_at >= since)
     )
-    if current_user.role == UserRole.SDR:
-        q = q.where(Activity.user_id == current_user.id)
+    # Team-shared: AI suggestions use all team members' activity.
     q = q.order_by(Activity.created_at.desc()).limit(200)
 
     result = await db.execute(q)

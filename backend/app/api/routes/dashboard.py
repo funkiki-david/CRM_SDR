@@ -55,9 +55,7 @@ async def get_follow_ups(
         )
     )
 
-    # Role-based filtering: Admin & Manager see all, SDR sees only their own
-    if current_user.role == UserRole.SDR:
-        query = query.where(Lead.owner_id == current_user.id)
+    # Team-shared: all users see all follow-ups regardless of owner.
 
     # Sort by urgency: overdue first, then today, then future
     query = query.order_by(Lead.next_follow_up.asc())
@@ -141,8 +139,6 @@ async def snooze_follow_up(
     lead = await db.get(Lead, lead_id)
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
-    if current_user.role == UserRole.SDR and lead.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
     if data.days < 1 or data.days > 90:
         raise HTTPException(status_code=400, detail="Days must be between 1 and 90")
 
@@ -168,8 +164,6 @@ async def reschedule_follow_up(
     lead = await db.get(Lead, lead_id)
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
-    if current_user.role == UserRole.SDR and lead.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
     try:
         lead.next_follow_up = date.fromisoformat(data.next_follow_up)
     except ValueError:
@@ -190,8 +184,6 @@ async def mark_follow_up_done(
     lead = await db.get(Lead, lead_id)
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
-    if current_user.role == UserRole.SDR and lead.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
     lead.next_follow_up = None
     lead.follow_up_reason = None
     await db.flush()
@@ -212,21 +204,14 @@ async def get_quick_stats(
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=7)
 
-    # Contacts (角色权限)
-    contact_q = select(func.count(Contact.id))
-    if current_user.role == UserRole.SDR:
-        contact_q = contact_q.where(Contact.owner_id == current_user.id)
-    total_contacts = (await db.execute(contact_q)).scalar() or 0
+    # Team-shared totals — all users see the full team numbers.
+    total_contacts = (await db.execute(select(func.count(Contact.id)))).scalar() or 0
 
-    # Activity counts — SDR only sees own activity, M/A 看全部
     def _act_count(activity_type: ActivityType, since: datetime):
-        q = select(func.count(Activity.id)).where(
+        return select(func.count(Activity.id)).where(
             Activity.activity_type == activity_type,
             Activity.created_at >= since,
         )
-        if current_user.role == UserRole.SDR:
-            q = q.where(Activity.user_id == current_user.id)
-        return q
 
     emails_today = (await db.execute(_act_count(ActivityType.EMAIL, today_start))).scalar() or 0
     calls_today = (await db.execute(_act_count(ActivityType.CALL, today_start))).scalar() or 0
@@ -250,10 +235,7 @@ async def get_pipeline_summary(
     Returns counts grouped by LeadStatus.
     """
     query = select(Lead.status, func.count(Lead.id)).group_by(Lead.status)
-
-    # Role-based filtering
-    if current_user.role == UserRole.SDR:
-        query = query.where(Lead.owner_id == current_user.id)
+    # Team-shared: everyone sees the same pipeline counts.
 
     result = await db.execute(query)
     rows = result.all()
