@@ -36,20 +36,20 @@ async def test_connection(
 ) -> None:
     """
     连接并登录 SMTP 服务器验证凭据。
+    aiosmtplib 4.x: use_tls vs start_tls 两个独立参数
+      - ssl:      use_tls=True（465 隐式 TLS）
+      - starttls: start_tls=True（587 自动升级）—— 由 connect() 处理，不要手动 starttls()
     成功：无返回值。失败：抛 SMTPError(message)。
     """
     try:
         if encryption == "ssl":
             client = aiosmtplib.SMTP(hostname=host, port=port, use_tls=True, timeout=timeout)
-            await client.connect()
         elif encryption == "starttls":
-            client = aiosmtplib.SMTP(hostname=host, port=port, use_tls=False, timeout=timeout)
-            await client.connect()
-            await client.starttls()
+            client = aiosmtplib.SMTP(hostname=host, port=port, start_tls=True, timeout=timeout)
         else:
-            client = aiosmtplib.SMTP(hostname=host, port=port, use_tls=False, timeout=timeout)
-            await client.connect()
+            client = aiosmtplib.SMTP(hostname=host, port=port, timeout=timeout)
 
+        await client.connect()
         try:
             await client.login(username, password)
         finally:
