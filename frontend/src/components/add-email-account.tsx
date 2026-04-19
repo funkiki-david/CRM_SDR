@@ -106,18 +106,27 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
     }));
   };
 
+  // 必填字段校验：哪些没填 —— UI 用来显示"Missing: X, Y"
+  const missingFields: string[] = [];
+  if (!form.email_address.trim()) missingFields.push("Email");
+  if (!form.smtp_host.trim()) missingFields.push("SMTP Server");
+  if (!form.smtp_port) missingFields.push("SMTP Port");
+  if (!form.smtp_username.trim()) missingFields.push("Username");
+  if (!form.smtp_password.trim()) missingFields.push("Password");
+  const allFilled = missingFields.length === 0;
+
   const handleTestConnection = async () => {
     setTesting(true);
     setTestResult(null);
     try {
       await emailsApi.testSmtp({
-        smtp_host: form.smtp_host,
+        smtp_host: form.smtp_host.trim(),
         smtp_port: form.smtp_port,
-        smtp_username: form.smtp_username,
+        smtp_username: form.smtp_username.trim(),
         smtp_password: form.smtp_password,
         smtp_encryption: form.smtp_encryption,
       });
-      setTestResult({ ok: true, msg: "连接成功，凭据有效 ✓" });
+      setTestResult({ ok: true, msg: "Connected and authenticated successfully ✓" });
     } catch (e) {
       setTestResult({ ok: false, msg: e instanceof Error ? e.message : "Test failed" });
     } finally {
@@ -128,16 +137,35 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
   const handleSaveSmtp = async () => {
     setSaving(true);
     setSaveError(null);
+    setTestResult(null);
     try {
+      // 先测试连接 —— 失败则不保存
+      // Test connection first; only save if auth succeeds
+      try {
+        await emailsApi.testSmtp({
+          smtp_host: form.smtp_host.trim(),
+          smtp_port: form.smtp_port,
+          smtp_username: form.smtp_username.trim(),
+          smtp_password: form.smtp_password,
+          smtp_encryption: form.smtp_encryption,
+        });
+      } catch (e) {
+        setSaveError(
+          `Connection test failed — not saving. ${e instanceof Error ? e.message : ""}`
+        );
+        setSaving(false);
+        return;
+      }
+
       await emailsApi.addAccount({
-        email_address: form.email_address,
-        display_name: form.display_name || undefined,
+        email_address: form.email_address.trim(),
+        display_name: form.display_name.trim() || form.email_address.trim(),  // fallback to email
         provider_type: "smtp",
-        smtp_host: form.smtp_host,
+        smtp_host: form.smtp_host.trim(),
         smtp_port: form.smtp_port,
-        imap_host: form.imap_host || undefined,
+        imap_host: form.imap_host.trim() || undefined,
         imap_port: form.imap_port || undefined,
-        smtp_username: form.smtp_username,
+        smtp_username: form.smtp_username.trim(),
         smtp_password: form.smtp_password,
         smtp_encryption: form.smtp_encryption,
       });
@@ -353,24 +381,33 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
           {provider === "picker" ? (
             <Button variant="outline" onClick={close}>Cancel</Button>
           ) : provider === "smtp" ? (
-            <>
-              <Button variant="ghost" onClick={() => setProvider("picker")}>← Back</Button>
+            <div className="w-full flex items-center justify-between">
+              <div className="flex flex-col">
+                <Button variant="ghost" onClick={() => setProvider("picker")}>← Back</Button>
+                {!allFilled && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    Missing: {missingFields.join(", ")}
+                  </p>
+                )}
+              </div>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   onClick={handleTestConnection}
-                  disabled={testing || !form.smtp_host || !form.smtp_username || !form.smtp_password}
+                  disabled={testing || !allFilled}
+                  title={!allFilled ? `Fill: ${missingFields.join(", ")}` : "Validate credentials without saving"}
                 >
                   {testing ? "Testing..." : "Test Connection"}
                 </Button>
                 <Button
                   onClick={handleSaveSmtp}
-                  disabled={saving || !form.email_address || !form.smtp_host || !form.smtp_password}
+                  disabled={saving || !allFilled}
+                  title={!allFilled ? `Fill: ${missingFields.join(", ")}` : "Test + save"}
                 >
                   {saving ? "Saving..." : "Save"}
                 </Button>
               </div>
-            </>
+            </div>
           ) : (
             <Button variant="ghost" onClick={() => setProvider("picker")}>← Back</Button>
           )}
