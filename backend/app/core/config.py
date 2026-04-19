@@ -3,6 +3,7 @@
 所有 API Key 都不会硬编码在代码里
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -26,6 +27,24 @@ class Settings(BaseSettings):
 
     # DISABLED: Using Claude direct search instead of OpenAI embeddings
     # OPENAI_API_KEY: str = ""
+
+    @field_validator("DATABASE_URL", mode="after")
+    @classmethod
+    def coerce_asyncpg_driver(cls, v: str) -> str:
+        """
+        Railway / Heroku / Render 的 Postgres 插件暴露的 DATABASE_URL 格式是
+        `postgresql://...`，但 SQLAlchemy 异步引擎需要 `postgresql+asyncpg://...`。
+        自动补齐驱动前缀，兼容这些平台。
+
+        Auto-coerce bare postgresql:// to postgresql+asyncpg:// so Railway's
+        native DATABASE_URL works without manual rewriting.
+        """
+        if v.startswith("postgres://"):
+            # Heroku legacy prefix
+            v = "postgresql://" + v[len("postgres://"):]
+        if v.startswith("postgresql://") and "+asyncpg" not in v:
+            return "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
     class Config:
         env_file = ".env"
