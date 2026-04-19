@@ -383,9 +383,15 @@ export const aiApi = {
       body: JSON.stringify({ contact_id: contactId, force_refresh: forceRefresh }),
     }),
 
-  /** AI draft email */
-  draftEmail: (contactId: number) =>
-    request("/api/ai/draft-email", { method: "POST", body: JSON.stringify({ contact_id: contactId }) }),
+  /** AI draft email — optional email_account_id shapes signature */
+  draftEmail: (contactId: number, emailAccountId?: number) =>
+    request("/api/ai/draft-email", {
+      method: "POST",
+      body: JSON.stringify({
+        contact_id: contactId,
+        email_account_id: emailAccountId,
+      }),
+    }),
 
   /** Smart search (Claude reads activities directly) */
   search: (query: string, limit = 10) =>

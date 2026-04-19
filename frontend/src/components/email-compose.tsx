@@ -40,7 +40,17 @@ interface EmailAccount {
   id: number;
   email_address: string;
   display_name: string | null;
+  provider_type: string;    // "smtp" | "gmail_oauth" | "outlook_oauth"
+  is_active: boolean;
 }
+
+const PROVIDER_LABEL: Record<string, string> = {
+  smtp: "SMTP",
+  gmail_oauth: "Gmail",
+  outlook_oauth: "Outlook",
+};
+
+const LAST_ACCOUNT_KEY = "email_compose_last_account_id";
 
 export default function EmailCompose({
   open,
@@ -74,10 +84,29 @@ export default function EmailCompose({
 
     templatesApi.list().then(setTemplates).catch(() => {});
     emailsApi.listAccounts().then((accs: EmailAccount[]) => {
-      setAccounts(accs);
-      if (accs.length > 0) setSelectedAccountId(accs[0].id);
+      // 只列 active 账号 —— 停用的不给发
+      const active = accs.filter(a => a.is_active);
+      setAccounts(active);
+      if (active.length === 0) {
+        setSelectedAccountId(null);
+        return;
+      }
+      // 优先用上次选的账号（持久化在 localStorage）
+      const lastId = typeof window !== "undefined"
+        ? Number(localStorage.getItem(LAST_ACCOUNT_KEY)) || null
+        : null;
+      const preferred = lastId && active.find(a => a.id === lastId);
+      setSelectedAccountId(preferred ? preferred.id : active[0].id);
     }).catch(() => {});
   }, [open]);
+
+  // 选择变化时持久化
+  function handleAccountChange(accountId: number) {
+    setSelectedAccountId(accountId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LAST_ACCOUNT_KEY, String(accountId));
+    }
+  }
 
   // When a template is selected, preview it with contact data
   async function handleSelectTemplate(templateId: number) {
@@ -174,7 +203,8 @@ export default function EmailCompose({
                     if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
                     setDrafting(true);
                     try {
-                      const draft = await aiApi.draftEmail(contactId);
+                      // Pass selected account so AI uses its display_name + company in the signature
+                      const draft = await aiApi.draftEmail(contactId, selectedAccountId ?? undefined);
                       setSubject(draft.subject || "");
                       setBody(draft.body || "");
                       refreshAIBudget();
@@ -196,26 +226,28 @@ export default function EmailCompose({
             </div>
 
             {/* Sender account */}
-            {accounts.length > 0 && (
-              <div className="space-y-2">
-                <Label>From</Label>
-                <div className="flex gap-2 flex-wrap">
-                  {accounts.map((acc) => (
-                    <button
-                      key={acc.id}
-                      onClick={() => setSelectedAccountId(acc.id)}
-                      className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${
-                        selectedAccountId === acc.id
-                          ? "border-blue-600 bg-blue-50 text-blue-700"
-                          : "border-gray-200 text-gray-600 hover:border-gray-400"
-                      }`}
-                    >
-                      {acc.email_address}
-                    </button>
-                  ))}
+            <div className="space-y-2">
+              <Label>From</Label>
+              {accounts.length === 0 ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+                  No email account connected.{" "}
+                  <a href="/settings" className="underline font-medium">Go to Settings</a>{" "}
+                  to add one.
                 </div>
-              </div>
-            )}
+              ) : (
+                <select
+                  value={selectedAccountId ?? ""}
+                  onChange={(e) => handleAccountChange(Number(e.target.value))}
+                  className="w-full h-10 px-3 rounded-md border border-input bg-transparent text-sm"
+                >
+                  {accounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.email_address} ({PROVIDER_LABEL[acc.provider_type] ?? acc.provider_type})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
 
             {/* Subject */}
             <div className="space-y-2">
@@ -257,7 +289,11 @@ export default function EmailCompose({
             {/* Actions */}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={onClose}>Cancel</Button>
-              <Button onClick={handleSend} disabled={sending || !contactEmail}>
+              <Button
+                onClick={handleSend}
+                disabled={sending || !contactEmail || !selectedAccountId}
+                title={!selectedAccountId ? "Connect an email account in Settings first" : undefined}
+              >
                 {sending ? "Sending..." : "Send Email"}
               </Button>
             </div>

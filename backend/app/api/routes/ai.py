@@ -352,6 +352,25 @@ async def generate_company_report(
 
 class DraftRequest(BaseModel):
     contact_id: int
+    # 可选：指定从哪个邮箱账号发，影响 AI 签名落款
+    # Optional: selected From-account id — shapes AI signature
+    email_account_id: Optional[int] = None
+
+
+def _infer_company_from_domain(email: str) -> str:
+    """
+    info@amazonsolutions.us → Amazon Solutions
+    marketing@graphictac.biz → Graphictac
+    john@acme-corp.com → Acme Corp
+    """
+    if "@" not in email:
+        return ""
+    domain = email.split("@", 1)[1].split(".")[0]
+    # camel/kebab → space-separated Title Case
+    parts = domain.replace("-", " ").replace("_", " ").split()
+    if not parts:
+        return ""
+    return " ".join(p.capitalize() for p in parts)
 
 
 @router.post("/draft-email")
@@ -367,6 +386,19 @@ async def draft_email(
     contact = await db.get(Contact, data.contact_id)
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
+
+    # 解析落款 —— 若指定了 email_account_id，用账号的 display_name + 域名推断的公司
+    # Resolve sender signature — if email_account selected, use account's display_name + company
+    sender_name = current_user.full_name
+    sender_company = ""
+    sender_email = ""
+    if data.email_account_id:
+        from app.models.email_account import EmailAccount
+        account = await db.get(EmailAccount, data.email_account_id)
+        if account and account.user_id == current_user.id:
+            sender_name = account.display_name or current_user.full_name
+            sender_email = account.email_address
+            sender_company = _infer_company_from_domain(account.email_address)
 
     result = await db.execute(
         select(Activity)
@@ -387,6 +419,10 @@ async def draft_email(
     person_block = f"PERSON RESEARCH:\n{contact.ai_person_report}" if contact.ai_person_report else ""
     company_block = f"COMPANY RESEARCH:\n{contact.ai_company_report}" if contact.ai_company_report else ""
     history_block = f"INTERACTION HISTORY:\n{activity_history}" if activity_history else "No prior interactions."
+
+    # 签名格式：Name, Company（若有 company）
+    signature_line = f"{sender_name}, {sender_company}" if sender_company else sender_name
+
     prompt = f"""CONTACT:
 - Name: {contact.first_name} {contact.last_name}
 - Title: {contact.title or 'Unknown'}
@@ -398,7 +434,10 @@ async def draft_email(
 
 {history_block}
 
-Sender name: {current_user.full_name}"""
+Sender name: {sender_name}
+Sender company: {sender_company or 'Unknown'}
+Sender email: {sender_email or 'Unknown'}
+Sign-off line: {signature_line}"""
 
     result, _log = await call_ai_with_limit(
         db=db,
