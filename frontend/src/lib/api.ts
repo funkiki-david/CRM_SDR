@@ -30,9 +30,10 @@ async function request(path: string, options: RequestInit = {}) {
     headers,
   });
 
-  // 如果 token 过期（401），自动跳转到登录页
+  // 如果 token 过期（401），清所有保存的信息 + 跳转到登录页
   if (response.status === 401 && typeof window !== "undefined") {
     localStorage.removeItem("token");
+    localStorage.removeItem("sdr_crm_remembered_email");
     window.location.href = "/login";
     throw new Error("Session expired");
   }
@@ -49,11 +50,11 @@ async function request(path: string, options: RequestInit = {}) {
  * 认证相关 API
  */
 export const authApi = {
-  /** 登录 — 返回 token */
-  login: (email: string, password: string) =>
+  /** 登录 — 返回 token. remember_me=true 时 token 有效期 30 天（默认 8 小时）*/
+  login: (email: string, password: string, rememberMe = false) =>
     request("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, remember_me: rememberMe }),
     }),
 
   /** Get current user info */

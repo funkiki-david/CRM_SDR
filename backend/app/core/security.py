@@ -26,14 +26,20 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(user_id: int, role: str) -> str:
+def create_access_token(
+    user_id: int,
+    role: str,
+    expires_minutes: Optional[int] = None,
+) -> str:
     """
     登录成功后，生成一个 JWT token 返回给前端
     token 里包含：用户 ID、角色、过期时间
+
+    expires_minutes: 可选，覆盖默认 ACCESS_TOKEN_EXPIRE_MINUTES。
+    用于 Remember me —— login 时传入 43200 (30 天)。
     """
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-    )
+    minutes = expires_minutes if expires_minutes is not None else settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     payload = {
         "sub": str(user_id),   # sub = subject，即"这个 token 是谁的"
         "role": role,

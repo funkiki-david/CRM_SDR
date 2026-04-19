@@ -57,7 +57,9 @@ export default function AppShell({ children, quickEntryContactId }: AppShellProp
       .getMe()
       .then(setUser)
       .catch(() => {
+        // Token 失效：清 token + remembered email（spec: 退出登录清所有）
         localStorage.removeItem("token");
+        localStorage.removeItem("sdr_crm_remembered_email");
         router.push("/login");
       })
       .finally(() => setLoading(false));
@@ -65,6 +67,7 @@ export default function AppShell({ children, quickEntryContactId }: AppShellProp
 
   function handleLogout() {
     localStorage.removeItem("token");
+    localStorage.removeItem("sdr_crm_remembered_email");
     router.push("/login");
   }
 

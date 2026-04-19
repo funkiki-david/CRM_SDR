@@ -12,6 +12,7 @@ class LoginRequest(BaseModel):
     """登录请求 — 前端发来的"""
     email: EmailStr
     password: str
+    remember_me: bool = False   # True → token 30 天；False → 默认 8 小时
 
 
 class RegisterRequest(BaseModel):

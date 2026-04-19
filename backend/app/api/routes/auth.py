@@ -47,8 +47,10 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     user.last_login_at = datetime.now(timezone.utc)
     await db.flush()
 
-    # 生成 token
-    token = create_access_token(user.id, user.role.value)
+    # 生成 token —— Remember me 时延长到 30 天
+    # Remember me → 30-day token; otherwise default ACCESS_TOKEN_EXPIRE_MINUTES (8h)
+    expires_minutes = 30 * 24 * 60 if request.remember_me else None
+    token = create_access_token(user.id, user.role.value, expires_minutes=expires_minutes)
     return TokenResponse(access_token=token)
 
 
