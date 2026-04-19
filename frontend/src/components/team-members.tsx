@@ -90,7 +90,7 @@ export default function TeamMembers({ currentUserId, currentUserRole }: TeamMemb
   useEffect(() => { load(); }, [load]);
 
   const handleDeactivate = async (m: TeamMember) => {
-    if (!confirm(`停用 ${m.full_name} (${m.email})？停用后此人无法登录。`)) return;
+    if (!confirm(`Deactivate ${m.full_name} (${m.email})? They will no longer be able to log in.`)) return;
     try {
       await usersApi.deactivate(m.id);
       load();
@@ -181,7 +181,7 @@ export default function TeamMembers({ currentUserId, currentUserRole }: TeamMemb
                           variant="outline"
                           className="text-xs h-7 text-red-600 hover:text-red-700"
                           disabled={m.id === currentUserId}
-                          title={m.id === currentUserId ? "不能停用自己" : "Deactivate"}
+                          title={m.id === currentUserId ? "You cannot deactivate yourself" : "Deactivate"}
                           onClick={() => handleDeactivate(m)}
                         >
                           Deactivate
@@ -236,11 +236,11 @@ function AddMemberModal({ onClose, onCreated }: { onClose: () => void; onCreated
 
   const handleCreate = async () => {
     if (!fullName || !email || !password) {
-      setError("Full Name, Email, Password 都是必填");
+      setError("Full Name, Email, and Password are all required");
       return;
     }
     if (password.length < 6) {
-      setError("密码至少 6 位");
+      setError("Password must be at least 6 characters");
       return;
     }
     setSaving(true);
@@ -288,9 +288,9 @@ function AddMemberModal({ onClose, onCreated }: { onClose: () => void; onCreated
               onChange={(e) => setRole(e.target.value as Role)}
               className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-sm"
             >
-              <option value="sdr">SDR — 只看自己的客户</option>
-              <option value="manager">Manager — 看团队所有客户</option>
-              <option value="admin">Admin — 全部权限</option>
+              <option value="sdr">SDR — Can only see their own contacts</option>
+              <option value="manager">Manager — Can see all team contacts</option>
+              <option value="admin">Admin — Full permissions</option>
             </select>
           </div>
           {error && (
@@ -341,14 +341,14 @@ function EditMemberModal({
       if (role !== member.role) payload.role = role;
       if (password) {
         if (password.length < 6) {
-          setError("密码至少 6 位");
+          setError("Password must be at least 6 characters");
           setSaving(false);
           return;
         }
         payload.password = password;
       }
       if (Object.keys(payload).length === 0) {
-        setError("没有改动");
+        setError("No changes made");
         setSaving(false);
         return;
       }
@@ -396,7 +396,7 @@ function EditMemberModal({
               onChange={(e) => setPassword(e.target.value)}
               className="h-9"
               autoComplete="new-password"
-              placeholder="留空则保持原密码"
+              placeholder="Leave blank to keep current password"
             />
           </div>
           {error && (

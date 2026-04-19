@@ -78,7 +78,7 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
   const handleFile = useCallback((f: File | null) => {
     if (!f) return;
     if (!f.name.toLowerCase().endsWith(".csv")) {
-      setError("只支持 .csv 文件");
+      setError("Only .csv files are supported");
       return;
     }
     setFile(f);
@@ -137,7 +137,7 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
 
             {result.errors.length > 0 && (
               <div className="border border-red-200 rounded p-3 max-h-48 overflow-y-auto">
-                <p className="text-xs font-medium text-red-700 mb-2">错误详情 (前 {result.errors.length} 条):</p>
+                <p className="text-xs font-medium text-red-700 mb-2">Error details (first {result.errors.length}):</p>
                 <ul className="space-y-1 text-xs text-red-600">
                   {result.errors.map((err, i) => (
                     <li key={i}>
@@ -168,10 +168,10 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
                 }`}
               >
                 <p className="text-sm text-gray-600">
-                  拖拽 CSV 文件到此处，或<span className="text-blue-600 underline">点击选择文件</span>
+                  Drag a CSV file here, or <span className="text-blue-600 underline">click to select a file</span>
                 </p>
                 <p className="text-xs text-gray-400 mt-2">
-                  支持 UTF-8 / GBK 编码 · 必填字段：first_name, last_name, email
+                  UTF-8 / GBK encoding supported · Required fields: first_name, last_name, email
                 </p>
                 <input
                   ref={inputRef}
@@ -219,7 +219,7 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
                       </tbody>
                     </table>
                     <p className="text-xs text-gray-400 p-2 bg-gray-50">
-                      预览前 {preview.rows.length} 行 · 共 {preview.total} 行
+                      Showing first {preview.rows.length} rows · {preview.total} total
                     </p>
                   </div>
                 )}
@@ -231,7 +231,7 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
                     onChange={(e) => setUpdateExisting(e.target.checked)}
                     className="rounded border-gray-300"
                   />
-                  如果邮箱已存在，用 CSV 内容<b className="ml-1">更新</b>（否则跳过）
+                  If the email already exists, <b className="ml-1">update</b> with CSV data (otherwise skip)
                 </label>
               </div>
             )}

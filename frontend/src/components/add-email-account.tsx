@@ -193,7 +193,7 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
         {/* === Step 1: Provider picker === */}
         {provider === "picker" && (
           <div className="py-4 space-y-4">
-            <p className="text-sm text-gray-600">选择邮箱服务商：</p>
+            <p className="text-sm text-gray-600">Choose your email provider:</p>
             <div className="grid grid-cols-3 gap-3">
               <button
                 onClick={() => setProvider("gmail")}
@@ -227,14 +227,24 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
         {provider === "gmail" && (
           <div className="py-4 space-y-3">
             <p className="text-sm text-gray-600">
-              Google Gmail OAuth 需要配置 Google Cloud 凭据。
-              目前尚未启用，你可以先用 &quot;Other SMTP&quot; 连接（Gmail 也支持 SMTP —
-              在 Google 账号安全里生成 App Password）。
+              Google Gmail OAuth requires Google Cloud credentials setup, which is not yet configured.
             </p>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
-              ⚠ Gmail 需要在 Google 账号 → 安全 → 两步验证 → 应用专用密码
-              生成 16 位 App Password，然后用 SMTP 模式：
-              <br />Host: <code>smtp.gmail.com</code> · Port: <code>465</code> · SSL
+            <p className="text-sm text-gray-600">
+              You can connect Gmail using SMTP with an App Password:
+            </p>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 space-y-1">
+              <p className="font-medium">⚠️ Steps to create Gmail App Password:</p>
+              <ol className="list-decimal list-inside space-y-0.5 pl-1">
+                <li>Go to Google Account → Security</li>
+                <li>Enable 2-Step Verification</li>
+                <li>Go to App Passwords</li>
+                <li>Generate a 16-character App Password</li>
+                <li>
+                  Use it as your password with these SMTP settings:
+                  <br />
+                  <span className="ml-4">Host: <code>smtp.gmail.com</code> · Port: <code>465</code> · SSL</span>
+                </li>
+              </ol>
             </div>
             <Button variant="outline" onClick={() => setProvider("smtp")}>
               Use SMTP Instead
@@ -246,13 +256,18 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
         {provider === "outlook" && (
           <div className="py-4 space-y-3">
             <p className="text-sm text-gray-600">
-              Microsoft Outlook OAuth (via Azure AD) 需要以后配置。
-              目前先用 SMTP 连接（Office 365 支持 SMTP AUTH）。
+              Microsoft Outlook OAuth (via Azure AD) requires future configuration.
             </p>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
-              ℹ Office 365 SMTP：
-              <br />Host: <code>smtp.office365.com</code> · Port: <code>587</code> · STARTTLS
-              <br />注意需要在 Microsoft 365 Admin 里启用 SMTP AUTH。
+            <p className="text-sm text-gray-600">
+              For now, connect using SMTP (Office 365 supports SMTP AUTH):
+            </p>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 space-y-1">
+              <p className="font-medium">ℹ️ Office 365 SMTP settings:</p>
+              <p>Host: <code>smtp.office365.com</code> · Port: <code>587</code> · STARTTLS</p>
+              <p className="text-[11px] mt-1">
+                Note: SMTP AUTH must be enabled in your Microsoft 365 Admin Center
+                (Users → Active users → select user → Mail → Manage email apps → Authenticated SMTP).
+              </p>
             </div>
             <Button variant="outline" onClick={() => setProvider("smtp")}>
               Use SMTP Instead
@@ -371,7 +386,7 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
             )}
 
             <p className="text-xs text-gray-400">
-              密码通过 Fernet 加密存储在数据库，不会明文保存或暴露给前端。
+              Your password is encrypted with Fernet in the database. It is never stored in plaintext or exposed to the frontend.
             </p>
           </div>
         )}
