@@ -38,5 +38,8 @@ greenlet==3.2.5
 # AI — Anthropic Claude (single provider for all AI features)
 anthropic==0.95.0
 
+# 邮件发送 — SMTP / IMAP 异步客户端
+aiosmtplib==4.0.2
+
 # DISABLED: OpenAI (kept for future embedding-based search)
 # openai==2.32.0

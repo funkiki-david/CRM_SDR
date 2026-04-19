@@ -221,12 +221,36 @@ export const emailsApi = {
   listAccounts: () => request("/api/emails/accounts"),
 
   /** Add an email account */
-  addAccount: (data: { email_address: string; display_name?: string }) =>
+  addAccount: (data: {
+    email_address: string;
+    display_name?: string;
+    provider_type?: "gmail_oauth" | "outlook_oauth" | "smtp";
+    smtp_host?: string;
+    smtp_port?: number;
+    imap_host?: string;
+    imap_port?: number;
+    smtp_username?: string;
+    smtp_password?: string;
+    smtp_encryption?: "ssl" | "starttls" | "none";
+  }) =>
     request("/api/emails/accounts", { method: "POST", body: JSON.stringify(data) }),
 
   /** Remove an email account */
   removeAccount: (id: number) =>
     request(`/api/emails/accounts/${id}`, { method: "DELETE" }),
+
+  /** 测试 SMTP 凭据（保存前验证）*/
+  testSmtp: (data: {
+    smtp_host: string;
+    smtp_port: number;
+    smtp_username: string;
+    smtp_password: string;
+    smtp_encryption: string;
+  }) =>
+    request("/api/emails/accounts/test-smtp", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   /** Preview a template with contact data filled in */
   preview: (contactId: number, templateId: number) =>

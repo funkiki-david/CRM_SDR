@@ -12,17 +12,20 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { emailsApi, settingsApi } from "@/lib/api";
+import AddEmailAccount from "@/components/add-email-account";
 
 interface EmailAccount {
   id: number;
   email_address: string;
   display_name: string | null;
+  provider_type: string;
   is_active: boolean;
+  smtp_host?: string | null;
+  last_test_error?: string | null;
   created_at: string;
 }
 
@@ -34,6 +37,7 @@ export default function SettingsPage() {
   const [apolloKey, setApolloKey] = useState("");
   const [apolloConfigured, setApolloConfigured] = useState(false);
   const [apolloPreview, setApolloPreview] = useState<string | null>(null);
+  const [apolloSource, setApolloSource] = useState<string>("none");
   const [savingApollo, setSavingApollo] = useState(false);
   const [apolloMessage, setApolloMessage] = useState("");
 
@@ -41,14 +45,13 @@ export default function SettingsPage() {
   const [anthropicKey, setAnthropicKey] = useState("");
   const [anthropicConfigured, setAnthropicConfigured] = useState(false);
   const [anthropicPreview, setAnthropicPreview] = useState<string | null>(null);
+  const [anthropicSource, setAnthropicSource] = useState<string>("none");
   const [savingAnthropic, setSavingAnthropic] = useState(false);
   const [anthropicMessage, setAnthropicMessage] = useState("");
   const [anthropicValid, setAnthropicValid] = useState<boolean | null>(null);
 
-  // Add account form
-  const [newEmail, setNewEmail] = useState("");
-  const [newName, setNewName] = useState("");
-  const [adding, setAdding] = useState(false);
+  // Add email account modal
+  const [addModalOpen, setAddModalOpen] = useState(false);
 
   async function loadAccounts() {
     try {
@@ -66,6 +69,7 @@ export default function SettingsPage() {
       const data = await settingsApi.apolloKeyStatus();
       setApolloConfigured(data.configured);
       setApolloPreview(data.key_preview);
+      setApolloSource(data.source || "none");
     } catch {
       // ignore
     }
@@ -92,6 +96,7 @@ export default function SettingsPage() {
       const data = await settingsApi.anthropicKeyStatus();
       setAnthropicConfigured(data.configured);
       setAnthropicPreview(data.key_preview);
+      setAnthropicSource(data.source || "none");
     } catch { /* ignore */ }
   }
 
@@ -124,24 +129,6 @@ export default function SettingsPage() {
     loadApolloStatus();
     loadAnthropicStatus();
   }, []);
-
-  async function handleAdd() {
-    if (!newEmail.trim()) return;
-    setAdding(true);
-    try {
-      await emailsApi.addAccount({
-        email_address: newEmail,
-        display_name: newName || undefined,
-      });
-      setNewEmail("");
-      setNewName("");
-      loadAccounts();
-    } catch {
-      // ignore
-    } finally {
-      setAdding(false);
-    }
-  }
 
   async function handleRemove(id: number) {
     if (!confirm("Remove this email account?")) return;
@@ -182,8 +169,22 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-3">
                       <div>
                         <p className="text-sm font-medium">{acc.email_address}</p>
-                        {acc.display_name && (
-                          <p className="text-xs text-gray-400">{acc.display_name}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {acc.display_name && (
+                            <p className="text-xs text-gray-400">{acc.display_name}</p>
+                          )}
+                          <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                            {acc.provider_type === "smtp" ? "SMTP" :
+                             acc.provider_type === "gmail_oauth" ? "Gmail" :
+                             acc.provider_type === "outlook_oauth" ? "Outlook" :
+                             acc.provider_type}
+                          </Badge>
+                          {acc.smtp_host && (
+                            <span className="text-[10px] text-gray-400">{acc.smtp_host}</span>
+                          )}
+                        </div>
+                        {acc.last_test_error && (
+                          <p className="text-[10px] text-red-500 mt-1">⚠ {acc.last_test_error}</p>
                         )}
                       </div>
                       <Badge variant={acc.is_active ? "secondary" : "outline"} className="text-xs">
@@ -205,30 +206,16 @@ export default function SettingsPage() {
 
             <Separator />
 
-            {/* Add new account */}
-            <div className="space-y-3">
-              <p className="text-sm font-medium text-gray-700">Add Email Account</p>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="email@example.com"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  className="flex-1"
-                />
-                <Input
-                  placeholder="Display name (optional)"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="flex-1"
-                />
-                <Button onClick={handleAdd} disabled={adding || !newEmail.trim()}>
-                  {adding ? "Adding..." : "Add"}
-                </Button>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-700">Add Email Account</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Gmail / Outlook / any SMTP server
+                </p>
               </div>
-              <p className="text-xs text-gray-400">
-                Note: Full Gmail OAuth integration will be configured when Google Cloud credentials are set up.
-                For now, emails are recorded in the system but not delivered via Gmail API.
-              </p>
+              <Button onClick={() => setAddModalOpen(true)}>
+                + Add Account
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -252,11 +239,20 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* Input for new key */}
+            {apolloSource === "env" ? (
+              <div className="p-3 bg-green-50 border border-green-200 rounded text-sm text-green-700">
+                ✓ API Key configured via environment variable (<code>APOLLO_API_KEY</code> in <code>backend/.env</code>)
+                <p className="text-xs text-green-600 mt-1">
+                  Override below if you want to use a different key at runtime.
+                </p>
+              </div>
+            ) : null}
+
+            {/* Input for new key — 只在没从 env 加载时强制显示 */}
             <div className="flex gap-2">
               <Input
                 type="password"
-                placeholder="Paste your Apollo API key here..."
+                placeholder={apolloSource === "env" ? "Override key (optional)" : "Paste your Apollo API key here..."}
                 value={apolloKey}
                 onChange={(e) => setApolloKey(e.target.value)}
                 className="flex-1"
@@ -272,10 +268,12 @@ export default function SettingsPage() {
               </p>
             )}
 
-            <p className="text-xs text-gray-400">
-              Find your API key at Apollo.io &rarr; Settings &rarr; Integrations &rarr; API Keys.
-              The key is stored securely and never exposed to the frontend.
-            </p>
+            {apolloSource !== "env" && (
+              <p className="text-xs text-gray-400">
+                Find your API key at Apollo.io &rarr; Settings &rarr; Integrations &rarr; API Keys.
+                The key is stored securely and never exposed to the frontend.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -297,8 +295,20 @@ export default function SettingsPage() {
                 <span className="text-xs text-gray-400">Key ending in {anthropicPreview}</span>
               )}
             </div>
+
+            {anthropicSource === "env" ? (
+              <div className="p-3 bg-green-50 border border-green-200 rounded text-sm text-green-700">
+                ✓ API Key configured via environment variable (<code>ANTHROPIC_API_KEY</code> in <code>backend/.env</code>)
+                <p className="text-xs text-green-600 mt-1">
+                  Override below if you want to use a different key at runtime.
+                </p>
+              </div>
+            ) : null}
+
             <div className="flex gap-2">
-              <Input type="password" placeholder="sk-ant-..." value={anthropicKey}
+              <Input type="password"
+                placeholder={anthropicSource === "env" ? "Override key (optional)" : "sk-ant-..."}
+                value={anthropicKey}
                 onChange={(e) => setAnthropicKey(e.target.value)} className="flex-1" />
               <Button onClick={handleSaveAnthropicKey} disabled={savingAnthropic || !anthropicKey.trim()}>
                 {savingAnthropic ? "Validating..." : "Save Key"}
@@ -324,6 +334,13 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Add Email Account modal */}
+      <AddEmailAccount
+        open={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        onSuccess={() => loadAccounts()}
+      />
     </AppShell>
   );
 }

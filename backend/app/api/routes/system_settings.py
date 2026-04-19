@@ -26,7 +26,7 @@ async def update_apollo_key(
     data: ApiKeyUpdate,
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
-    apollo_service.api_key = data.key
+    apollo_service.set_key_manual(data.key)
     settings.APOLLO_API_KEY = data.key
     return {"message": "Apollo API key updated successfully"}
 
@@ -37,6 +37,7 @@ async def apollo_key_status(
 ):
     return {
         "configured": apollo_service.is_configured,
+        "source": apollo_service.source,  # "env" | "manual" | "none"
         "key_preview": f"...{apollo_service.api_key[-6:]}" if apollo_service.is_configured else None,
     }
 
@@ -73,6 +74,7 @@ async def anthropic_key_status(
 ):
     return {
         "configured": ai_service.ai_ready,
+        "source": ai_service.source,  # "env" | "manual" | "none"
         "key_preview": f"...{settings.ANTHROPIC_API_KEY[-6:]}" if ai_service.ai_ready else None,
     }
 

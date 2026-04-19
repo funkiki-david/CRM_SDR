@@ -28,6 +28,17 @@ async def init_db():
             "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_person_generated_at TIMESTAMPTZ",
             "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_company_generated_at TIMESTAMPTZ",
             "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS ai_report_model VARCHAR(100)",
+            # 任务 11 EmailAccount 扩展 SMTP 支持
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS provider_type VARCHAR(30) NOT NULL DEFAULT 'smtp'",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS smtp_host VARCHAR(255)",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS smtp_port INTEGER",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS imap_host VARCHAR(255)",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS imap_port INTEGER",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS smtp_username VARCHAR(255)",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS smtp_password_encrypted TEXT",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS smtp_encryption VARCHAR(20)",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_tested_at TIMESTAMPTZ",
+            "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_test_error TEXT",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

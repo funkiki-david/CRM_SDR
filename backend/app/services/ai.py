@@ -109,11 +109,20 @@ class AIService:
 
     def __init__(self):
         self._anthropic_key = settings.ANTHROPIC_API_KEY
+        # Track where the key came from: "env" (from .env at startup) or
+        # "manual" (user pasted in Settings UI). Used by /status endpoint.
+        self._source: str = "env" if self._anthropic_key else "none"
 
     def update_keys(self, anthropic_key: str = "", **kwargs):
+        """Called when Admin updates via Settings UI — overrides env value"""
         if anthropic_key:
             self._anthropic_key = anthropic_key
             settings.ANTHROPIC_API_KEY = anthropic_key
+            self._source = "manual"
+
+    @property
+    def source(self) -> str:
+        return self._source
 
     @property
     def ai_ready(self) -> bool:

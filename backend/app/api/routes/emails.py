@@ -21,7 +21,13 @@ from app.models.sent_email import SentEmail, EmailStatus
 from app.models.activity import Activity, ActivityType
 from app.schemas.email import (
     ComposeRequest, ComposePreviewRequest, SentEmailResponse,
-    EmailAccountResponse, EmailAccountCreate,
+    EmailAccountResponse, EmailAccountCreate, SMTPTestRequest,
+)
+from app.core.crypto import encrypt_password, decrypt_password
+from app.services.smtp_sender import (
+    test_connection as smtp_test_connection,
+    send_mail as smtp_send_mail,
+    SMTPError,
 )
 
 router = APIRouter(prefix="/api/emails", tags=["Emails"])
@@ -67,18 +73,60 @@ async def add_email_account(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Add an email account (manual mode for now).
-    Full Gmail OAuth flow will be added when Google Cloud credentials are configured.
+    Add an email account. Three providers supported:
+      - gmail_oauth: placeholder — OAuth flow wires up tokens separately
+      - outlook_oauth: placeholder
+      - smtp: full SMTP/IMAP config + password (encrypted at rest)
     """
+    provider = (data.provider_type or "smtp").lower()
+
     account = EmailAccount(
         user_id=current_user.id,
         email_address=data.email_address,
         display_name=data.display_name or current_user.full_name,
+        provider_type=provider,
         is_active=True,
     )
+
+    if provider == "smtp":
+        if not (data.smtp_host and data.smtp_port and data.smtp_username and data.smtp_password):
+            raise HTTPException(
+                status_code=400,
+                detail="SMTP 模式需要 smtp_host / smtp_port / smtp_username / smtp_password",
+            )
+        account.smtp_host = data.smtp_host
+        account.smtp_port = data.smtp_port
+        account.imap_host = data.imap_host
+        account.imap_port = data.imap_port
+        account.smtp_username = data.smtp_username
+        account.smtp_password_encrypted = encrypt_password(data.smtp_password)
+        account.smtp_encryption = data.smtp_encryption or "ssl"
+
     db.add(account)
     await db.flush()
     return account
+
+
+@router.post("/accounts/test-smtp")
+async def test_smtp_credentials(
+    data: SMTPTestRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    在保存账号前验证 SMTP 凭据（连接 + 登录）。
+    成功返回 {ok:true}，失败返回 400 + 错误描述。
+    """
+    try:
+        await smtp_test_connection(
+            host=data.smtp_host,
+            port=data.smtp_port,
+            username=data.smtp_username,
+            password=data.smtp_password,
+            encryption=data.smtp_encryption,
+        )
+    except SMTPError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "message": "Connected and authenticated successfully"}
 
 
 @router.delete("/accounts/{account_id}", status_code=204)
@@ -127,44 +175,71 @@ async def send_email(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Send an email to a contact.
-    If Gmail OAuth is configured → sends via Gmail API.
-    If not → saves as draft with a note that Gmail needs to be connected.
+    Send an email — dispatcher based on account.provider_type:
+      - smtp          → 用 aiosmtplib 直接发
+      - gmail_oauth   → TODO: Gmail API (stub: save as draft)
+      - outlook_oauth → TODO: MS Graph API (stub: save as draft)
     Also logs an activity in the contact's timeline.
     """
-    # Verify contact exists and has an email
     contact = await db.get(Contact, data.contact_id)
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
     if not contact.email:
         raise HTTPException(status_code=400, detail="Contact has no email address")
 
-    # Check email account (if specified)
     email_account = None
     if data.email_account_id:
         email_account = await db.get(EmailAccount, data.email_account_id)
         if email_account is None or email_account.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="Email account not found")
 
-    # Fill template variables in subject and body
     subject = _fill_template(data.subject, contact, current_user.full_name)
     body = _fill_template(data.body, contact, current_user.full_name)
 
-    # Try to send via Gmail API
     email_status = EmailStatus.DRAFT
     sent_at = None
     gmail_message_id = None
 
-    if email_account and email_account.refresh_token:
-        # TODO: Implement actual Gmail API sending when OAuth is configured
-        # For now, mark as sent (simulated)
+    # === Dispatcher ===
+    if email_account is None:
+        # 没选账号 → 存 draft（老行为）
         pass
+    elif email_account.provider_type == "smtp":
+        if not email_account.smtp_password_encrypted:
+            raise HTTPException(status_code=400, detail="SMTP account missing password")
+        try:
+            password = decrypt_password(email_account.smtp_password_encrypted)
+        except ValueError as e:
+            raise HTTPException(status_code=500, detail=f"密码解密失败，请重新保存账号: {e}")
 
-    # For now, simulate successful send
-    email_status = EmailStatus.SENT
-    sent_at = datetime.now(timezone.utc)
+        try:
+            result_id = await smtp_send_mail(
+                host=email_account.smtp_host,
+                port=email_account.smtp_port,
+                username=email_account.smtp_username,
+                password=password,
+                encryption=email_account.smtp_encryption or "ssl",
+                from_email=email_account.email_address,
+                from_name=email_account.display_name,
+                to_email=contact.email,
+                subject=subject,
+                body=body,
+            )
+            email_status = EmailStatus.SENT
+            sent_at = datetime.now(timezone.utc)
+            gmail_message_id = result_id  # 复用字段记录 SMTP 返回
+        except SMTPError as e:
+            raise HTTPException(status_code=502, detail=f"SMTP send failed: {e}")
+    elif email_account.provider_type in ("gmail_oauth", "outlook_oauth"):
+        # OAuth 提供商暂时保存为 draft —— 真实发送等 OAuth 配置好再实现
+        # TODO: Gmail API / Microsoft Graph 发送
+        email_status = EmailStatus.DRAFT
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown provider_type: {email_account.provider_type}",
+        )
 
-    # Save the sent email record
     sent_email = SentEmail(
         contact_id=contact.id,
         to_email=contact.email,
@@ -179,10 +254,9 @@ async def send_email(
     )
     db.add(sent_email)
 
-    # Log an activity in the contact's timeline
     activity = Activity(
         activity_type=ActivityType.EMAIL,
-        subject=f"Sent: {subject}",
+        subject=f"Sent: {subject}" if email_status == EmailStatus.SENT else f"Draft: {subject}",
         content=body,
         contact_id=contact.id,
         user_id=current_user.id,
