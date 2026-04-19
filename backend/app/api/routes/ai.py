@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_role
 from app.core.config import (
     CLAUDE_MODEL,
     AI_SEARCH_ACTIVITY_LIMIT,
@@ -25,6 +25,7 @@ from app.core.config import (
 from app.models.user import User, UserRole
 from app.models.contact import Contact
 from app.models.activity import Activity
+from app.models.ai_usage_log import AIUsageLog
 from app.services.ai import (
     ai_service,
     SYSTEM_PROMPT_RESEARCH_PERSON,
@@ -32,7 +33,12 @@ from app.services.ai import (
     SYSTEM_PROMPT_DRAFT_EMAIL,
     SYSTEM_PROMPT_SUGGEST_TODOS,
 )
-from app.services.ai_budget import call_ai_with_limit
+from app.services.ai_budget import (
+    call_ai_with_limit,
+    get_user_spend_today,
+    get_per_user_daily_limit,
+    set_per_user_daily_limit,
+)
 
 # DISABLED: Using Claude direct search instead of pgvector embeddings
 # from app.models.embedding import Embedding
@@ -57,6 +63,127 @@ def _build_company_prompt(contact: Contact) -> str:
 - Website: {contact.company_domain or 'Unknown'}
 - Industry: {contact.industry or 'Unknown'}
 - Size: {contact.company_size or 'Unknown'} employees"""
+
+
+# === Per-User Usage + Limits ===
+
+def _budget_color(spent: float, limit: float) -> str:
+    """$0-60%=green, 60-80%=yellow, 80-100%=red"""
+    if limit <= 0:
+        return "green"
+    pct = spent / limit
+    if pct < 0.6:
+        return "green"
+    if pct < 0.8:
+        return "yellow"
+    return "red"
+
+
+@router.get("/usage")
+async def get_my_ai_usage(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """当前用户今日 AI 花费 + 剩余额度"""
+    spent = await get_user_spend_today(db, current_user.id)
+    is_admin = current_user.role == UserRole.ADMIN
+    limit = None if is_admin else await get_per_user_daily_limit(db)
+
+    result = {
+        "user_id": current_user.id,
+        "role": current_user.role.value,
+        "spent_today": round(spent, 4),
+        "unlimited": is_admin,
+    }
+    if limit is not None:
+        result["daily_limit"] = limit
+        result["remaining"] = max(0, round(limit - spent, 4))
+        result["percent"] = round((spent / limit) * 100, 1) if limit > 0 else 0
+        result["color"] = _budget_color(spent, limit)
+        result["at_limit"] = spent >= limit
+    else:
+        result["color"] = "green"
+        result["at_limit"] = False
+    return result
+
+
+@router.get("/usage/all")
+async def get_all_users_usage(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Admin: 所有用户今日用量 + 本月总计"""
+    limit = await get_per_user_daily_limit(db)
+
+    # 所有用户
+    users_result = await db.execute(select(User).order_by(User.id))
+    users = users_result.scalars().all()
+
+    # 一次性算每个用户的今日花费
+    start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    from sqlalchemy import func as _f
+    agg = await db.execute(
+        select(
+            AIUsageLog.user_id,
+            _f.coalesce(_f.sum(AIUsageLog.cost_usd), 0),
+        )
+        .where(AIUsageLog.created_at >= start)
+        .where(AIUsageLog.status == "ok")
+        .group_by(AIUsageLog.user_id)
+    )
+    spend_map = {row[0]: float(row[1]) for row in agg.all()}
+
+    # 本月总计
+    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_agg = await db.execute(
+        select(_f.coalesce(_f.sum(AIUsageLog.cost_usd), 0))
+        .where(AIUsageLog.created_at >= month_start)
+        .where(AIUsageLog.status == "ok")
+    )
+    month_total = float(month_agg.scalar() or 0)
+
+    rows = []
+    for u in users:
+        spent = spend_map.get(u.id, 0.0)
+        is_admin = u.role == UserRole.ADMIN
+        row = {
+            "user_id": u.id,
+            "full_name": u.full_name,
+            "email": u.email,
+            "role": u.role.value,
+            "spent_today": round(spent, 4),
+            "unlimited": is_admin,
+        }
+        if is_admin:
+            row["daily_limit"] = None
+            row["percent"] = None
+            row["color"] = "green"
+        else:
+            row["daily_limit"] = limit
+            row["percent"] = round((spent / limit) * 100, 1) if limit > 0 else 0
+            row["color"] = _budget_color(spent, limit)
+        rows.append(row)
+
+    return {
+        "users": rows,
+        "daily_limit_usd": limit,
+        "month_total_usd": round(month_total, 4),
+    }
+
+
+class UpdateLimitRequest(BaseModel):
+    daily_limit_usd: float
+
+
+@router.patch("/limits")
+async def update_ai_limit(
+    data: UpdateLimitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Admin: 修改每用户每日上限（Admin 无上限，此设置不影响 Admin）"""
+    new_limit = await set_per_user_daily_limit(db, data.daily_limit_usd)
+    return {"daily_limit_usd": new_limit}
 
 
 # === Status ===
@@ -140,7 +267,7 @@ async def generate_person_report(
     prompt = _build_person_prompt(contact)
     report, _log = await call_ai_with_limit(
         db=db,
-        user_id=current_user.id,
+        user=current_user,
         feature="research_person",
         call_fn=lambda: ai_service._call_claude_raw(
             prompt, CLAUDE_MAX_TOKENS_RESEARCH, system=SYSTEM_PROMPT_RESEARCH_PERSON,
@@ -203,7 +330,7 @@ async def generate_company_report(
     prompt = _build_company_prompt(contact)
     report, _log = await call_ai_with_limit(
         db=db,
-        user_id=current_user.id,
+        user=current_user,
         feature="research_company",
         call_fn=lambda: ai_service._call_claude_raw(
             prompt, CLAUDE_MAX_TOKENS_RESEARCH, system=SYSTEM_PROMPT_RESEARCH_COMPANY,
@@ -275,7 +402,7 @@ Sender name: {current_user.full_name}"""
 
     result, _log = await call_ai_with_limit(
         db=db,
-        user_id=current_user.id,
+        user=current_user,
         feature="draft_email",
         call_fn=lambda: ai_service._call_claude_raw(
             prompt, CLAUDE_MAX_TOKENS_EMAIL, system=SYSTEM_PROMPT_DRAFT_EMAIL,
@@ -351,7 +478,7 @@ ACTIVITY LOG ({len(activities)} entries):
     try:
         raw, _log = await call_ai_with_limit(
             db=db,
-            user_id=current_user.id,
+            user=current_user,
             feature="suggest_todos",
             call_fn=lambda: ai_service._call_claude_raw(
                 prompt, 1500, system=SYSTEM_PROMPT_SUGGEST_TODOS,

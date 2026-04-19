@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { templatesApi, emailsApi, aiApi } from "@/lib/api";
+import { useAIBudget, AIBudgetBadge, AILimitModal } from "@/components/ai-budget";
 
 interface EmailComposeProps {
   open: boolean;
@@ -59,6 +60,8 @@ export default function EmailCompose({
   const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const { usage: aiUsage, refresh: refreshAIBudget } = useAIBudget();
+  const [showLimitModal, setShowLimitModal] = useState(false);
 
   // Load templates and accounts when dialog opens
   useEffect(() => {
@@ -168,19 +171,27 @@ export default function EmailCompose({
                 )}
                 <button
                   onClick={async () => {
+                    if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
                     setDrafting(true);
                     try {
                       const draft = await aiApi.draftEmail(contactId);
                       setSubject(draft.subject || "");
                       setBody(draft.body || "");
-                    } catch { /* ignore */ }
+                      refreshAIBudget();
+                    } catch (e) {
+                      if (e instanceof Error && e.message.includes("daily_limit")) {
+                        setShowLimitModal(true);
+                      }
+                      refreshAIBudget();
+                    }
                     setDrafting(false);
                   }}
-                  disabled={drafting}
+                  disabled={drafting || aiUsage?.at_limit}
                   className="px-3 py-1.5 rounded-full border text-sm transition-colors border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50"
                 >
                   {drafting ? "AI writing..." : "\u2728 AI Draft"}
                 </button>
+                <AIBudgetBadge usage={aiUsage} compact />
               </div>
             </div>
 
@@ -253,6 +264,7 @@ export default function EmailCompose({
           </div>
         )}
       </DialogContent>
+      <AILimitModal open={showLimitModal} usage={aiUsage} onClose={() => setShowLimitModal(false)} />
     </Dialog>
   );
 }

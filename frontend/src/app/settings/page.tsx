@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { emailsApi, settingsApi, authApi } from "@/lib/api";
 import AddEmailAccount from "@/components/add-email-account";
 import TeamMembers from "@/components/team-members";
+import AIUsageAdmin from "@/components/ai-usage-admin";
 
 interface EmailAccount {
   id: number;
@@ -331,6 +332,9 @@ export default function SettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* === AI Usage Limits (Admin only) === */}
+        {currentUserRole === "admin" && <AIUsageAdmin />}
 
         {/* === Team Members === */}
         <TeamMembers currentUserId={currentUserId} currentUserRole={currentUserRole} />

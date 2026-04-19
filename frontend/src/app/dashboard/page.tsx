@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { dashboardApi, activitiesApi, aiApi, authApi } from "@/lib/api";
+import { useAIBudget } from "@/components/ai-budget";
 
 // ==================== Types ====================
 
@@ -170,12 +171,7 @@ export default function DashboardPage() {
         </div>
 
         {/* === Quick Stats === */}
-        <div className="grid grid-cols-4 gap-3">
-          <StatCard icon="📊" label="Total Contacts" value={stats?.total_contacts ?? "—"} />
-          <StatCard icon="📧" label="Emails Sent Today" value={stats?.emails_today ?? "—"} />
-          <StatCard icon="📞" label="Calls Today" value={stats?.calls_today ?? "—"} />
-          <StatCard icon="🤝" label="Meetings This Week" value={stats?.meetings_this_week ?? "—"} />
-        </div>
+        <QuickStatsRow stats={stats} />
 
         {/* === 60 / 40 two-column === */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -220,7 +216,7 @@ export default function DashboardPage() {
   );
 }
 
-// ==================== StatCard ====================
+// ==================== StatCard + Quick Stats Row ====================
 
 function StatCard({ icon, label, value }: { icon: string; label: string; value: number | string }) {
   return (
@@ -230,6 +226,55 @@ function StatCard({ icon, label, value }: { icon: string; label: string; value: 
         <span>{label}</span>
       </div>
       <p className="text-2xl font-semibold text-gray-900">{value}</p>
+    </div>
+  );
+}
+
+function AIBudgetStatCard() {
+  const { usage } = useAIBudget();
+  if (!usage) {
+    return <StatCard icon="🤖" label="AI Budget" value="—" />;
+  }
+  if (usage.unlimited) {
+    return (
+      <div className="p-4 bg-white rounded-lg border border-gray-200">
+        <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5">
+          <span className="text-base">🤖</span>
+          <span>AI Budget</span>
+        </div>
+        <p className="text-lg font-semibold text-gray-900">Unlimited</p>
+        <p className="text-[10px] text-gray-400 mt-0.5">${usage.spent_today.toFixed(2)} today</p>
+      </div>
+    );
+  }
+  const colorMap: Record<string, string> = {
+    green: "text-green-600",
+    yellow: "text-yellow-700",
+    red: "text-red-700",
+  };
+  return (
+    <div className="p-4 bg-white rounded-lg border border-gray-200">
+      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5">
+        <span className="text-base">🤖</span>
+        <span>AI Budget</span>
+      </div>
+      <p className={`text-lg font-semibold ${colorMap[usage.color] || ""}`}>
+        ${usage.spent_today.toFixed(2)}
+        <span className="text-gray-400 text-sm font-normal"> / ${(usage.daily_limit ?? 0).toFixed(2)}</span>
+      </p>
+      <p className="text-[10px] text-gray-400 mt-0.5">today</p>
+    </div>
+  );
+}
+
+function QuickStatsRow({ stats }: { stats: QuickStats | null }) {
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <StatCard icon="📊" label="Total Contacts" value={stats?.total_contacts ?? "—"} />
+      <StatCard icon="📧" label="Emails Today" value={stats?.emails_today ?? "—"} />
+      <StatCard icon="📞" label="Calls Today" value={stats?.calls_today ?? "—"} />
+      <StatCard icon="🤝" label="Meetings This Week" value={stats?.meetings_this_week ?? "—"} />
+      <AIBudgetStatCard />
     </div>
   );
 }

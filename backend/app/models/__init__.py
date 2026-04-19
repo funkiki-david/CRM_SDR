@@ -11,6 +11,7 @@ from app.models.email_account import EmailAccount
 from app.models.email_template import EmailTemplate
 from app.models.sent_email import SentEmail, EmailStatus
 from app.models.ai_usage_log import AIUsageLog
+from app.models.app_setting import AppSetting
 
 __all__ = [
     "User", "UserRole",
@@ -22,4 +23,5 @@ __all__ = [
     "EmailTemplate",
     "SentEmail", "EmailStatus",
     "AIUsageLog",
+    "AppSetting",
 ]

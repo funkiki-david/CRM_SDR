@@ -12,6 +12,7 @@ import QuickEntry from "@/components/quick-entry";
 import EmailCompose from "@/components/email-compose";
 import AddContact from "@/components/add-contact";
 import ImportContacts from "@/components/import-contacts";
+import { useAIBudget, AIBudgetBadge, AILimitModal } from "@/components/ai-budget";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -117,6 +118,10 @@ export default function ContactsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [generatingPersonReport, setGeneratingPersonReport] = useState(false);
   const [generatingCompanyReport, setGeneratingCompanyReport] = useState(false);
+
+  // AI budget status — shared via hook
+  const { usage: aiUsage, refresh: refreshAIBudget } = useAIBudget();
+  const [showLimitModal, setShowLimitModal] = useState(false);
 
   // Load contact list
   const loadContacts = useCallback(async (searchTerm?: string) => {
@@ -432,24 +437,27 @@ export default function ContactsPage() {
                     <CardTitle className="text-sm font-medium text-gray-700">
                       AI Person Report
                     </CardTitle>
-                    {selectedContact.ai_person_generated_at && (
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {relativeDays(selectedContact.ai_person_generated_at)}
-                        {selectedContact.ai_report_model
-                          ? ` · ${selectedContact.ai_report_model.replace("-20251001", "")}`
-                          : ""}
-                      </p>
-                    )}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {selectedContact.ai_person_generated_at && (
+                        <p className="text-xs text-gray-400">
+                          {relativeDays(selectedContact.ai_person_generated_at)}
+                          {selectedContact.ai_report_model
+                            ? ` · ${selectedContact.ai_report_model.replace("-20251001", "")}`
+                            : ""}
+                        </p>
+                      )}
+                      <AIBudgetBadge usage={aiUsage} compact />
+                    </div>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
                     className="text-xs h-7"
-                    disabled={generatingPersonReport}
+                    disabled={generatingPersonReport || aiUsage?.at_limit}
                     onClick={async () => {
+                      if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
                       setGeneratingPersonReport(true);
                       try {
-                        // 已有报告则强制刷新（Regenerate 按钮行为）
                         const hasReport = !!selectedContact.ai_person_report;
                         const data = await aiApi.personReport(selectedContact.id, hasReport);
                         setSelectedContact({
@@ -459,7 +467,14 @@ export default function ContactsPage() {
                           ai_person_generated_at: data.meta?.generated_at ?? selectedContact.ai_person_generated_at,
                           ai_report_model: data.meta?.model ?? selectedContact.ai_report_model,
                         });
-                      } catch { /* ignore */ }
+                        refreshAIBudget();
+                      } catch (e) {
+                        // 403 = limit hit, pop the alert modal
+                        if (e instanceof Error && e.message.includes("daily_limit")) {
+                          setShowLimitModal(true);
+                        }
+                        refreshAIBudget();
+                      }
                       setGeneratingPersonReport(false);
                     }}
                   >
@@ -488,21 +503,25 @@ export default function ContactsPage() {
                     <CardTitle className="text-sm font-medium text-gray-700">
                       AI Company Report
                     </CardTitle>
-                    {selectedContact.ai_company_generated_at && (
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {relativeDays(selectedContact.ai_company_generated_at)}
-                        {selectedContact.ai_report_model
-                          ? ` · ${selectedContact.ai_report_model.replace("-20251001", "")}`
-                          : ""}
-                      </p>
-                    )}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {selectedContact.ai_company_generated_at && (
+                        <p className="text-xs text-gray-400">
+                          {relativeDays(selectedContact.ai_company_generated_at)}
+                          {selectedContact.ai_report_model
+                            ? ` · ${selectedContact.ai_report_model.replace("-20251001", "")}`
+                            : ""}
+                        </p>
+                      )}
+                      <AIBudgetBadge usage={aiUsage} compact />
+                    </div>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
                     className="text-xs h-7"
-                    disabled={generatingCompanyReport}
+                    disabled={generatingCompanyReport || aiUsage?.at_limit}
                     onClick={async () => {
+                      if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
                       setGeneratingCompanyReport(true);
                       try {
                         const hasReport = !!selectedContact.ai_company_report;
@@ -513,7 +532,13 @@ export default function ContactsPage() {
                           ai_company_generated_at: data.meta?.generated_at ?? selectedContact.ai_company_generated_at,
                           ai_report_model: data.meta?.model ?? selectedContact.ai_report_model,
                         });
-                      } catch { /* ignore */ }
+                        refreshAIBudget();
+                      } catch (e) {
+                        if (e instanceof Error && e.message.includes("daily_limit")) {
+                          setShowLimitModal(true);
+                        }
+                        refreshAIBudget();
+                      }
                       setGeneratingCompanyReport(false);
                     }}
                   >
@@ -642,6 +667,13 @@ export default function ContactsPage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onSuccess={() => loadContacts()}
+      />
+
+      {/* AI Limit Reached modal — shown when user tries AI while at limit */}
+      <AILimitModal
+        open={showLimitModal}
+        usage={aiUsage}
+        onClose={() => setShowLimitModal(false)}
       />
 
       {/* Quick Entry dialog for logging activities from contact detail */}

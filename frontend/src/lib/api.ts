@@ -393,4 +393,17 @@ export const aiApi = {
 
   /** AI Suggested To-Do — analyzes last 30d activity, returns 3 suggestions */
   suggestTodos: () => request("/api/ai/suggest-todos"),
+
+  /** Current user's today AI spend + remaining limit */
+  getUsage: () => request("/api/ai/usage"),
+
+  /** Admin: all users' today spend */
+  getAllUsage: () => request("/api/ai/usage/all"),
+
+  /** Admin: update per-user daily limit (USD) */
+  updateLimit: (dailyLimitUsd: number) =>
+    request("/api/ai/limits", {
+      method: "PATCH",
+      body: JSON.stringify({ daily_limit_usd: dailyLimitUsd }),
+    }),
 };
