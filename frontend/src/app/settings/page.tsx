@@ -55,6 +55,9 @@ export default function SettingsPage() {
   // Add email account modal
   const [addModalOpen, setAddModalOpen] = useState(false);
 
+  // OAuth callback toast（?gmail=connected 或 ?gmail=error 回来）
+  const [oauthMessage, setOauthMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
   // Current user (for Team Members Admin-only controls)
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<"admin" | "manager" | "sdr" | null>(null);
@@ -134,11 +137,25 @@ export default function SettingsPage() {
     loadAccounts();
     loadApolloStatus();
     loadAnthropicStatus();
-    // 拿当前用户身份 —— 决定 Team Members 区域是否显示 Admin 按钮
     authApi.getMe().then((u: { id: number; role: "admin" | "manager" | "sdr" }) => {
       setCurrentUserId(u.id);
       setCurrentUserRole(u.role);
     }).catch(() => { /* ignore */ });
+
+    // 读 URL query — 从 Google OAuth 回来时会带 ?gmail=connected|error
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const status = params.get("gmail");
+      if (status === "connected") {
+        const email = params.get("email") || "your Gmail account";
+        setOauthMessage({ ok: true, text: `✓ Connected ${email} via Google OAuth.` });
+        window.history.replaceState({}, "", "/settings");
+      } else if (status === "error") {
+        const reason = params.get("reason") || "unknown error";
+        setOauthMessage({ ok: false, text: `Gmail connection failed: ${reason}` });
+        window.history.replaceState({}, "", "/settings");
+      }
+    }
   }, []);
 
   async function handleRemove(id: number) {
@@ -165,6 +182,25 @@ export default function SettingsPage() {
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* OAuth callback toast */}
+            {oauthMessage && (
+              <div
+                className={`p-3 rounded border text-sm ${
+                  oauthMessage.ok
+                    ? "bg-green-50 border-green-200 text-green-700"
+                    : "bg-red-50 border-red-200 text-red-700"
+                }`}
+              >
+                {oauthMessage.text}
+                <button
+                  onClick={() => setOauthMessage(null)}
+                  className="float-right text-xs opacity-70 hover:opacity-100"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
             {/* Current accounts */}
             {loading ? (
               <p className="text-sm text-gray-400">Loading...</p>

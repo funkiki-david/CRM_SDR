@@ -22,7 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { emailsApi } from "@/lib/api";
+import { emailsApi, authApi } from "@/lib/api";
 
 interface AddEmailAccountProps {
   open: boolean;
@@ -223,32 +223,50 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
           </div>
         )}
 
-        {/* === Gmail OAuth placeholder === */}
+        {/* === Gmail OAuth === */}
         {provider === "gmail" && (
           <div className="py-4 space-y-3">
             <p className="text-sm text-gray-600">
-              Google Gmail OAuth requires Google Cloud credentials setup, which is not yet configured.
+              Connect your Gmail account using Google OAuth. You&rsquo;ll be redirected to
+              Google to authorize, then sent back here automatically.
             </p>
-            <p className="text-sm text-gray-600">
-              You can connect Gmail using SMTP with an App Password:
-            </p>
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 space-y-1">
-              <p className="font-medium">⚠️ Steps to create Gmail App Password:</p>
-              <ol className="list-decimal list-inside space-y-0.5 pl-1">
-                <li>Go to Google Account → Security</li>
-                <li>Enable 2-Step Verification</li>
-                <li>Go to App Passwords</li>
-                <li>Generate a 16-character App Password</li>
-                <li>
-                  Use it as your password with these SMTP settings:
-                  <br />
-                  <span className="ml-4">Host: <code>smtp.gmail.com</code> · Port: <code>465</code> · SSL</span>
-                </li>
-              </ol>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800 space-y-1">
+              <p className="font-medium">What we request:</p>
+              <ul className="list-disc list-inside space-y-0.5 pl-1">
+                <li>Send email on your behalf (<code>gmail.send</code>)</li>
+                <li>Read your primary email address (<code>userinfo.email</code>)</li>
+              </ul>
+              <p className="mt-1.5 text-[11px]">
+                We never read your inbox. Tokens are encrypted in the database.
+              </p>
             </div>
-            <Button variant="outline" onClick={() => setProvider("smtp")}>
-              Use SMTP Instead
-            </Button>
+            {saveError && (
+              <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                {saveError}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                onClick={async () => {
+                  setSaveError(null);
+                  try {
+                    const { auth_url } = await authApi.googleOAuthStart();
+                    window.location.href = auth_url;
+                  } catch (e) {
+                    setSaveError(
+                      e instanceof Error
+                        ? e.message
+                        : "Google OAuth is not configured yet. Ask Admin to set GOOGLE_CLIENT_ID."
+                    );
+                  }
+                }}
+              >
+                Connect with Google
+              </Button>
+              <Button variant="outline" onClick={() => setProvider("smtp")}>
+                Use App Password (SMTP) Instead
+              </Button>
+            </div>
           </div>
         )}
 

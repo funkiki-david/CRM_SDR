@@ -41,5 +41,10 @@ anthropic==0.95.0
 # 邮件发送 — SMTP / IMAP 异步客户端
 aiosmtplib==4.0.2
 
+# Google OAuth + Gmail API（Gmail 账号发信走 Google 官方 API，不走 SMTP）
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-api-python-client==2.149.0
+
 # DISABLED: OpenAI (kept for future embedding-based search)
 # openai==2.32.0

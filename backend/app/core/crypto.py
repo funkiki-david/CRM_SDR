@@ -49,3 +49,10 @@ def decrypt_password(token: str) -> str:
     except InvalidToken:
         # 密钥变了导致解密失败 —— 记录但不抛错，让调用方识别"需要用户重新输入密码"
         raise ValueError("Password decryption failed — key may have rotated")
+
+
+# === Generic aliases for any secret (OAuth access_token / refresh_token / etc.) ===
+# 功能与 encrypt_password / decrypt_password 完全相同，只是语义上更清楚
+# —— 这两个函数名用于 SMTP 密码以外的场景（Gmail OAuth access/refresh token）。
+encrypt_secret = encrypt_password
+decrypt_secret = decrypt_password

@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     # === AI (Anthropic only — single provider) ===
     ANTHROPIC_API_KEY: str = ""
 
+    # === Google OAuth (Gmail send + profile) ===
+    # 在 Google Cloud Console → APIs & Services → Credentials 建 OAuth 2.0 Client (Web)
+    # 授权回调地址必须跟 GOOGLE_OAUTH_REDIRECT_URI 一致
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
+
+    # 前端基地址 —— OAuth 回调完成后跳回前端
+    # Frontend base URL — where to send the user after OAuth completes
+    FRONTEND_BASE_URL: str = "http://localhost:3000"
+
     # DISABLED: Using Claude direct search instead of OpenAI embeddings
     # OPENAI_API_KEY: str = ""
 

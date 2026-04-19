@@ -59,6 +59,9 @@ export const authApi = {
 
   /** Get current user info */
   getMe: () => request("/api/auth/me"),
+
+  /** Start Google OAuth —— 返回 auth URL, 前端 window.location 跳过去 */
+  googleOAuthStart: () => request("/api/auth/google/start") as Promise<{ auth_url: string }>,
 };
 
 /**

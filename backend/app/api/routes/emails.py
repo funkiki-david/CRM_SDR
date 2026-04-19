@@ -29,6 +29,11 @@ from app.services.smtp_sender import (
     send_mail as smtp_send_mail,
     SMTPError,
 )
+from app.services.gmail_oauth import (
+    refresh_if_needed as gmail_refresh_if_needed,
+    send_via_gmail,
+    GmailOAuthError,
+)
 
 router = APIRouter(prefix="/api/emails", tags=["Emails"])
 
@@ -230,9 +235,41 @@ async def send_email(
             gmail_message_id = result_id  # 复用字段记录 SMTP 返回
         except SMTPError as e:
             raise HTTPException(status_code=502, detail=f"SMTP send failed: {e}")
-    elif email_account.provider_type in ("gmail_oauth", "outlook_oauth"):
-        # OAuth 提供商暂时保存为 draft —— 真实发送等 OAuth 配置好再实现
-        # TODO: Gmail API / Microsoft Graph 发送
+    elif email_account.provider_type == "gmail_oauth":
+        # Gmail OAuth：刷新 access_token（如需）→ 调 Gmail API users.messages.send
+        if not email_account.access_token or not email_account.refresh_token:
+            raise HTTPException(
+                status_code=400,
+                detail="Gmail account missing OAuth tokens. Reconnect via Settings.",
+            )
+        try:
+            creds, token_updates = gmail_refresh_if_needed(
+                access_token_encrypted=email_account.access_token,
+                refresh_token_encrypted=email_account.refresh_token,
+                token_expires_at=email_account.token_expires_at,
+            )
+            # 若刷新成功，把新的 access_token 回写
+            if token_updates:
+                email_account.access_token = token_updates["access_token"]
+                email_account.token_expires_at = token_updates["token_expires_at"]
+                await db.flush()
+
+            gmail_msg_id = send_via_gmail(
+                creds,
+                from_email=email_account.email_address,
+                from_name=email_account.display_name,
+                to_email=contact.email,
+                subject=subject,
+                body=body,
+            )
+            email_status = EmailStatus.SENT
+            sent_at = datetime.now(timezone.utc)
+            gmail_message_id = gmail_msg_id
+        except GmailOAuthError as e:
+            raise HTTPException(status_code=502, detail=f"Gmail send failed: {e}")
+
+    elif email_account.provider_type == "outlook_oauth":
+        # TODO: Microsoft Graph API — 暂未实现，落 draft
         email_status = EmailStatus.DRAFT
     else:
         raise HTTPException(
