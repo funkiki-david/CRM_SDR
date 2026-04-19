@@ -41,6 +41,9 @@ async def init_db():
             "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_test_error TEXT",
             # Team Members: 登录时间追踪
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ",
+            # Contact assignment: 当前负责跟进的 Manager
+            "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS assigned_to INTEGER REFERENCES users(id)",
+            "CREATE INDEX IF NOT EXISTS ix_contacts_assigned_to ON contacts(assigned_to)",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

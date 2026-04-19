@@ -110,6 +110,7 @@ class ContactUpdate(BaseModel):
     website: Optional[str] = None
     industry_tags: Optional[List[str]] = None
     notes: Optional[str] = None
+    assigned_to: Optional[int] = None
 
 
 class ContactResponse(BaseModel):
@@ -139,6 +140,7 @@ class ContactResponse(BaseModel):
     import_source: Optional[str] = None
     apollo_id: Optional[str] = None
     owner_id: int
+    assigned_to: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

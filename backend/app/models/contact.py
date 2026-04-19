@@ -73,8 +73,15 @@ class Contact(Base):
     owner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )
-    # owner_id 指向负责这个联系人的 SDR
+    # owner_id 指向创建 / 原始拥有该联系人的 SDR（历史记录）
     # SDR 只能看到 owner_id = 自己的联系人（权限隔离）
+
+    # assigned_to: 当前负责跟进的 Manager。与 owner_id 不同：
+    # owner_id 永远不变（审计），assigned_to 可以随时在 Manager 之间流转
+    # assigned_to: Who currently works this contact (can be reassigned freely).
+    assigned_to: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
 
     # === 时间戳 ===
     created_at: Mapped[datetime] = mapped_column(
