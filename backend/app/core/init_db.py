@@ -39,6 +39,8 @@ async def init_db():
             "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS smtp_encryption VARCHAR(20)",
             "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_tested_at TIMESTAMPTZ",
             "ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS last_test_error TEXT",
+            # Team Members: 登录时间追踪
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

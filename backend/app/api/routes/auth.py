@@ -3,6 +3,8 @@
 路径前缀：/api/auth
 """
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +42,10 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account disabled, please contact your admin",
         )
+
+    # 记录最后登录时间（Team Members 面板显示用）
+    user.last_login_at = datetime.now(timezone.utc)
+    await db.flush()
 
     # 生成 token
     token = create_access_token(user.id, user.role.value)

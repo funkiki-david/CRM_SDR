@@ -239,6 +239,8 @@ export const emailsApi = {
   removeAccount: (id: number) =>
     request(`/api/emails/accounts/${id}`, { method: "DELETE" }),
 
+  // Users API 在下面单独导出 usersApi，这里顺手不碰
+
   /** 测试 SMTP 凭据（保存前验证）*/
   testSmtp: (data: {
     smtp_host: string;
@@ -306,6 +308,34 @@ export const settingsApi = {
   setAnthropicKey: (key: string) =>
     request("/api/settings/anthropic-key", { method: "POST", body: JSON.stringify({ key }) }),
   anthropicKeyStatus: () => request("/api/settings/anthropic-key/status"),
+};
+
+/**
+ * Users / Team Members API
+ */
+export const usersApi = {
+  list: () => request("/api/users"),
+
+  create: (data: {
+    email: string;
+    password: string;
+    full_name: string;
+    role: "admin" | "manager" | "sdr";
+    manager_id?: number;
+  }) => request("/api/users", { method: "POST", body: JSON.stringify(data) }),
+
+  edit: (id: number, data: {
+    full_name?: string;
+    role?: "admin" | "manager" | "sdr";
+    manager_id?: number;
+    password?: string;
+  }) => request(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  deactivate: (id: number) =>
+    request(`/api/users/${id}/deactivate`, { method: "PATCH" }),
+
+  activate: (id: number) =>
+    request(`/api/users/${id}/activate`, { method: "PATCH" }),
 };
 
 /**

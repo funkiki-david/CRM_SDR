@@ -15,8 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { emailsApi, settingsApi } from "@/lib/api";
+import { emailsApi, settingsApi, authApi } from "@/lib/api";
 import AddEmailAccount from "@/components/add-email-account";
+import TeamMembers from "@/components/team-members";
 
 interface EmailAccount {
   id: number;
@@ -52,6 +53,10 @@ export default function SettingsPage() {
 
   // Add email account modal
   const [addModalOpen, setAddModalOpen] = useState(false);
+
+  // Current user (for Team Members Admin-only controls)
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<"admin" | "manager" | "sdr" | null>(null);
 
   async function loadAccounts() {
     try {
@@ -128,6 +133,11 @@ export default function SettingsPage() {
     loadAccounts();
     loadApolloStatus();
     loadAnthropicStatus();
+    // 拿当前用户身份 —— 决定 Team Members 区域是否显示 Admin 按钮
+    authApi.getMe().then((u: { id: number; role: "admin" | "manager" | "sdr" }) => {
+      setCurrentUserId(u.id);
+      setCurrentUserRole(u.role);
+    }).catch(() => { /* ignore */ });
   }, []);
 
   async function handleRemove(id: number) {
@@ -322,17 +332,8 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* === Team Members (placeholder) === */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Team Members</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-gray-400">
-              Team member management (add Managers and SDRs) will be added in a future update.
-            </p>
-          </CardContent>
-        </Card>
+        {/* === Team Members === */}
+        <TeamMembers currentUserId={currentUserId} currentUserRole={currentUserRole} />
       </div>
 
       {/* Add Email Account modal */}

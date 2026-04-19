@@ -1,0 +1,417 @@
+/**
+ * Team Members — 团队成员列表 + Admin 管理操作
+ *
+ * 所有登录用户能看到列表。Admin 额外能：
+ *   - Add Team Member (+)
+ *   - Edit (改名字 / 角色 / 重置密码)
+ *   - Deactivate / Activate
+ */
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { usersApi } from "@/lib/api";
+
+type Role = "admin" | "manager" | "sdr";
+
+interface TeamMember {
+  id: number;
+  email: string;
+  full_name: string;
+  role: Role;
+  is_active: boolean;
+  manager_id: number | null;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+function relativeLogin(iso: string | null): string {
+  if (!iso) return "Never logged in";
+  const diff = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+const ROLE_LABEL: Record<Role, string> = {
+  admin: "Admin",
+  manager: "Manager",
+  sdr: "SDR",
+};
+
+const ROLE_COLOR: Record<Role, string> = {
+  admin: "bg-purple-100 text-purple-800 border-purple-200",
+  manager: "bg-blue-100 text-blue-800 border-blue-200",
+  sdr: "bg-green-100 text-green-800 border-green-200",
+};
+
+interface TeamMembersProps {
+  currentUserId: number | null;
+  currentUserRole: Role | null;
+}
+
+export default function TeamMembers({ currentUserId, currentUserRole }: TeamMembersProps) {
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const isAdmin = currentUserRole === "admin";
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await usersApi.list() as TeamMember[];
+      setMembers(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load users");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDeactivate = async (m: TeamMember) => {
+    if (!confirm(`停用 ${m.full_name} (${m.email})？停用后此人无法登录。`)) return;
+    try {
+      await usersApi.deactivate(m.id);
+      load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const handleActivate = async (m: TeamMember) => {
+    try {
+      await usersApi.activate(m.id);
+      load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed");
+    }
+  };
+
+  const editingMember = editingId !== null ? members.find(m => m.id === editingId) ?? null : null;
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Team Members</CardTitle>
+            <p className="text-sm text-gray-500">
+              {members.length} {members.length === 1 ? "user" : "users"}
+              {isAdmin && " · Admin can add, edit, and deactivate"}
+            </p>
+          </div>
+          {isAdmin && (
+            <Button size="sm" onClick={() => setAddOpen(true)}>+ Add Team Member</Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700 mb-3">
+              {error}
+            </div>
+          )}
+          {loading ? (
+            <p className="text-sm text-gray-400">Loading…</p>
+          ) : members.length === 0 ? (
+            <p className="text-sm text-gray-400">No users yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {members.map((m) => (
+                <div
+                  key={m.id}
+                  className={`flex items-center justify-between p-3 rounded-md border ${
+                    m.is_active ? "bg-gray-50 border-gray-200" : "bg-gray-100 border-gray-300 opacity-60"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-gray-900">{m.full_name}</p>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] py-0 px-1.5 ${ROLE_COLOR[m.role]}`}
+                      >
+                        {ROLE_LABEL[m.role]}
+                      </Badge>
+                      {!m.is_active && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5">Inactive</Badge>
+                      )}
+                      {m.id === currentUserId && (
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-yellow-50">You</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="text-xs text-gray-500">{m.email}</span>
+                      <span className="text-xs text-gray-400">· Last login: {relativeLogin(m.last_login_at)}</span>
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-7"
+                        onClick={() => setEditingId(m.id)}
+                      >
+                        Edit
+                      </Button>
+                      {m.is_active ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-7 text-red-600 hover:text-red-700"
+                          disabled={m.id === currentUserId}
+                          title={m.id === currentUserId ? "不能停用自己" : "Deactivate"}
+                          onClick={() => handleDeactivate(m)}
+                        >
+                          Deactivate
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-7 text-green-600"
+                          onClick={() => handleActivate(m)}
+                        >
+                          Activate
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {addOpen && (
+        <AddMemberModal
+          onClose={() => setAddOpen(false)}
+          onCreated={() => { setAddOpen(false); load(); }}
+        />
+      )}
+
+      {editingMember && (
+        <EditMemberModal
+          member={editingMember}
+          onClose={() => setEditingId(null)}
+          onSaved={() => { setEditingId(null); load(); }}
+        />
+      )}
+    </>
+  );
+}
+
+
+// ================== Add Modal ==================
+
+function AddMemberModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Role>("sdr");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    if (!fullName || !email || !password) {
+      setError("Full Name, Email, Password 都是必填");
+      return;
+    }
+    if (password.length < 6) {
+      setError("密码至少 6 位");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await usersApi.create({ email, password, full_name: fullName, role });
+      onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create user");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Team Member</DialogTitle>
+        </DialogHeader>
+        <div className="py-2 space-y-3">
+          <div>
+            <Label className="text-xs">Full Name</Label>
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-9" />
+          </div>
+          <div>
+            <Label className="text-xs">Email</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-9" />
+          </div>
+          <div>
+            <Label className="text-xs">Password</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-9"
+              autoComplete="new-password"
+              placeholder="At least 6 characters"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Role</Label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+              className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-sm"
+            >
+              <option value="sdr">SDR — 只看自己的客户</option>
+              <option value="manager">Manager — 看团队所有客户</option>
+              <option value="admin">Admin — 全部权限</option>
+            </select>
+          </div>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={saving}>
+            {saving ? "Creating..." : "Create"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+// ================== Edit Modal ==================
+
+function EditMemberModal({
+  member,
+  onClose,
+  onSaved,
+}: {
+  member: TeamMember;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [fullName, setFullName] = useState(member.full_name);
+  const [role, setRole] = useState<Role>(member.role);
+  const [password, setPassword] = useState(""); // 空 → 不改密码
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const payload: {
+        full_name?: string;
+        role?: Role;
+        password?: string;
+      } = {};
+      if (fullName && fullName !== member.full_name) payload.full_name = fullName;
+      if (role !== member.role) payload.role = role;
+      if (password) {
+        if (password.length < 6) {
+          setError("密码至少 6 位");
+          setSaving(false);
+          return;
+        }
+        payload.password = password;
+      }
+      if (Object.keys(payload).length === 0) {
+        setError("没有改动");
+        setSaving(false);
+        return;
+      }
+      await usersApi.edit(member.id, payload);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit {member.full_name}</DialogTitle>
+        </DialogHeader>
+        <div className="py-2 space-y-3">
+          <div>
+            <Label className="text-xs">Email (read-only)</Label>
+            <Input value={member.email} disabled className="h-9 bg-gray-50" />
+          </div>
+          <div>
+            <Label className="text-xs">Full Name</Label>
+            <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-9" />
+          </div>
+          <div>
+            <Label className="text-xs">Role</Label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+              className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-sm"
+            >
+              <option value="sdr">SDR</option>
+              <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Reset Password (optional)</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-9"
+              autoComplete="new-password"
+              placeholder="留空则保持原密码"
+            />
+          </div>
+          {error && (
+            <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {error}
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

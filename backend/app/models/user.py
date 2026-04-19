@@ -49,6 +49,11 @@ class User(Base):
     # === 状态 ===
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # 最后一次登录时间 Last successful login (set by /api/auth/login)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # === 时间戳（全部用 UTC）===
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
