@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { emailsApi, settingsApi, authApi } from "@/lib/api";
+import { notifyEmailDisabled } from "@/lib/email-disabled";
 import AddEmailAccount from "@/components/add-email-account";
 import TeamMembers from "@/components/team-members";
 import AIUsageAdmin from "@/components/ai-usage-admin";
@@ -242,7 +243,7 @@ export default function SettingsPage() {
                       variant="outline"
                       size="sm"
                       className="text-red-500 hover:text-red-700"
-                      onClick={() => handleRemove(acc.id)}
+                      onClick={notifyEmailDisabled}
                     >
                       Remove
                     </Button>
@@ -260,7 +261,7 @@ export default function SettingsPage() {
                   Gmail / Outlook / any SMTP server
                 </p>
               </div>
-              <Button onClick={() => setAddModalOpen(true)}>
+              <Button onClick={notifyEmailDisabled}>
                 + Add Account
               </Button>
             </div>

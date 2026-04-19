@@ -1,12 +1,12 @@
 # SDR CRM — Site Audit Report
 
-Generated: 2026-04-19 06:45 UTC
+Generated: 2026-04-19 23:18 UTC
 
 ## Summary
 
 - 🔴 **Critical**: 0
 - 🟡 **Warnings**: 0
-- ℹ️ **Info**: 87
+- ℹ️ **Info**: 88
 - 🟢 **Passed**: 11
 
 ## 🔴 Critical Issues (must fix)
@@ -19,11 +19,13 @@ _None_
 
 ## ℹ️ Info
 
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/settings/page.tsx:137)
-  - `拿当前用户身份`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/settings/page.tsx:262)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/settings/page.tsx:59)
+  - `或`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/settings/page.tsx:146)
+  - `读`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/settings/page.tsx:299)
   - `只在没从`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/contacts/page.tsx:94)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/contacts/page.tsx:95)
   - `相对时间`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/dashboard/page.tsx:2)
   - `最佳实践版本`
@@ -63,22 +65,12 @@ _None_
   - `用`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/finder/page.tsx:221)
   - `防抖`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:23)
-  - `阻止表单默认提交行为`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:28)
-  - `调后端登录接口`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:30)
-  - `把`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:32)
-  - `跳转到首页`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:52)
-  - `邮箱输入`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:65)
-  - `密码输入`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:78)
-  - `错误提示`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:83)
-  - `登录按钮`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:25)
+  - `打开登录页时`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:46)
+  - `保存邮箱`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/app/login/page.tsx:47)
+  - `清除任何之前保存的邮箱`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/components/add-email-account.tsx:2)
   - `三种邮箱服务商选择`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/components/add-email-account.tsx:4)
@@ -125,6 +117,8 @@ _None_
   - `简便写法`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/components/ai-budget.tsx:139)
   - `用法`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/components/app-shell.tsx:60)
+  - `失效`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/components/import-contacts.tsx:2)
   - `批量从`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/components/import-contacts.tsx:4)
@@ -155,6 +149,12 @@ _None_
   - `改名字`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/components/team-members.tsx:327)
   - `空`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/email-disabled.ts:4)
+  - `把所有`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/email-disabled.ts:5)
+  - `后端`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/email-disabled.ts:7)
+  - `恢复方式`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:2)
   - `客户端`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:3)
@@ -169,30 +169,32 @@ _None_
   - `如果有`
 - **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:33)
   - `如果`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:49)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:50)
   - `认证相关`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:52)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:53)
   - `登录`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:137)
-  - `批量导入`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:138)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:63)
   - `返回`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:161)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:141)
+  - `批量导入`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:142)
+  - `返回`
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:165)
   - `触发浏览器下载`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:162)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:166)
   - `角色权限在后端执行`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:182)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:186)
   - `下载空白`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:266)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:270)
   - `在下面单独导出`
-- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:268)
+- **Chinese Text (comments)** — Chinese in code comment (allowed per project rules) (frontend/src/lib/api.ts:272)
   - `测试`
-- **TODO/FIXME/HACK** — Code marker — review and resolve if stale (backend/app/api/routes/emails.py:180)
+- **TODO/FIXME/HACK** — Code marker — review and resolve if stale (backend/app/api/routes/emails.py:185)
   - `- gmail_oauth   → TODO: Gmail API (stub: save as draft)`
-- **TODO/FIXME/HACK** — Code marker — review and resolve if stale (backend/app/api/routes/emails.py:181)
+- **TODO/FIXME/HACK** — Code marker — review and resolve if stale (backend/app/api/routes/emails.py:186)
   - `- outlook_oauth → TODO: MS Graph API (stub: save as draft)`
-- **TODO/FIXME/HACK** — Code marker — review and resolve if stale (backend/app/api/routes/emails.py:235)
-  - `# TODO: Gmail API / Microsoft Graph 发送`
+- **TODO/FIXME/HACK** — Code marker — review and resolve if stale (backend/app/api/routes/emails.py:272)
+  - `# TODO: Microsoft Graph API — 暂未实现，落 draft`
 
 ## 🟢 Passed Checks
 
@@ -204,7 +206,7 @@ _None_
 - **.env in .gitignore** — .env is gitignored (not pushed to repo)
 - **.env tracked in git** — No .env files tracked in git
 - **CORS whitelist** — CORS uses explicit origin whitelist
-  - `"http://localhost:3000",     "https://zealous-enjoyment-production.up.railway.app",     "https://crm-frontend-production.up.railway.app",`
+  - `"http://localhost:3000",     "https://zealous-enjoyment-production.up.railway.app",     "https://crm-frontend-production.up.railway.app",     "https:/`
 - **Brand Consistency** — All files use 'SDR CRM' branding
 - **Apollo Leak (user-visible)** — No user-visible 'Apollo' strings (78 OK occurrences in code identifiers / comments / API URLs)
 - **Contact Info** — Admin email uses 'info@amazonsolutions.us' consistently
