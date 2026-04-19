@@ -122,10 +122,17 @@ export default function FinderPage() {
   const [revenueRange, setRevenueRange] = useState<string[]>([]);
   const [refineOpen, setRefineOpen] = useState(false);
 
+  // Guide visibility — default expanded on first visit, persisted via localStorage
   const [showGuide, setShowGuide] = useState(() => {
-    if (typeof window !== "undefined") return localStorage.getItem("finder_guide_dismissed") !== "1";
+    if (typeof window !== "undefined") return localStorage.getItem("finder_guide_hidden") !== "1";
     return true;
   });
+  const toggleGuide = (show: boolean) => {
+    setShowGuide(show);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("finder_guide_hidden", show ? "0" : "1");
+    }
+  };
 
   // Results state
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -293,11 +300,6 @@ export default function FinderPage() {
     setIndustry([]); setSeniority([]); setEmployeeRange([]); setRevenueRange([]);
   }
 
-  function dismissGuide() {
-    setShowGuide(false);
-    localStorage.setItem("finder_guide_dismissed", "1");
-  }
-
   function toggleMulti(value: string, arr: string[], setter: (v: string[]) => void) {
     if (arr.includes(value)) setter(arr.filter(v => v !== value));
     else setter([...arr, value]);
@@ -306,21 +308,74 @@ export default function FinderPage() {
   return (
     <AppShell>
       <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Find Prospects</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Search Apollo&rsquo;s 210M+ contact database. Search is free — credits only used on enrichment.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <h1 className="text-xl font-semibold text-gray-900">Find Prospects</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Search 210M+ B2B &amp; B2C contact database. Search is free — credits are only used when importing contacts to your CRM.
+            </p>
+          </div>
+          {!showGuide && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs shrink-0"
+              onClick={() => toggleGuide(true)}
+            >
+              📖 Show Guide
+            </Button>
+          )}
         </div>
 
-        {/* === Guide Banner === */}
+        {/* === How-to Guide (collapsible) === */}
         {showGuide && (
-          <div className="relative p-3 bg-blue-50 rounded border border-blue-100">
-            <button onClick={dismissGuide} className="absolute top-2 right-3 text-gray-400 hover:text-gray-600 text-sm">&times;</button>
-            <p className="text-xs text-gray-600">
-              <b>Primary Search</b>（白色区域）填至少一个就能搜 ·
-              <b className="ml-1">Refine Results</b>（灰色区域）用于进一步缩小结果范围
-            </p>
+          <div className="p-5 bg-blue-50 rounded-lg border border-blue-100">
+            <div className="flex items-center justify-between mb-4">
+              <p className="font-medium text-sm text-gray-900 flex items-center gap-1.5">
+                <span className="text-base">📖</span> How to Use Prospect Finder
+              </p>
+              <button
+                onClick={() => toggleGuide(false)}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                Hide Guide
+              </button>
+            </div>
+
+            <ol className="space-y-3 text-sm text-gray-700">
+              <li>
+                <p className="font-semibold text-gray-900">1. Start with a Search</p>
+                <p className="text-gray-600 mt-0.5 text-xs">
+                  Enter at least one search term in the Primary Search area: company name,
+                  domain, keywords, LinkedIn URL, or person name.
+                </p>
+              </li>
+              <li>
+                <p className="font-semibold text-gray-900">2. Refine Your Results <span className="font-normal text-gray-400">(Optional)</span></p>
+                <p className="text-gray-600 mt-0.5 text-xs">
+                  Click &ldquo;Refine Results&rdquo; to narrow down by location, industry,
+                  seniority, company size, or revenue range.
+                </p>
+              </li>
+              <li>
+                <p className="font-semibold text-gray-900">3. Review &amp; Import</p>
+                <p className="text-gray-600 mt-0.5 text-xs">
+                  Browse the results, select the contacts you want, then click
+                  &ldquo;Import to CRM&rdquo; to add them to your contact list.
+                </p>
+              </li>
+            </ol>
+
+            <div className="mt-4 pt-3 border-t border-blue-200">
+              <p className="font-semibold text-sm text-gray-900 mb-1.5">💡 Tips</p>
+              <ul className="space-y-1 text-xs text-gray-600 list-disc pl-5">
+                <li>Search is free — credits are only used when importing contacts</li>
+                <li>Use <b>Keywords</b> for broad searches (e.g. &ldquo;sign shop&rdquo;)</li>
+                <li>Use <b>Company Domain</b> for exact matches (e.g. acme.com)</li>
+                <li>Combine search + filters for best results</li>
+                <li><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1 align-middle"></span>Green badge = new contact &nbsp;·&nbsp; <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1 align-middle"></span>Blue badge = already in your CRM</li>
+              </ul>
+            </div>
           </div>
         )}
 
@@ -516,7 +571,7 @@ export default function FinderPage() {
             </DialogHeader>
             <p className="text-sm text-gray-600">
               Enrich {selectedToEnrich} prospect{selectedToEnrich !== 1 ? "s" : ""}?
-              This will consume <strong>{selectedToEnrich} Apollo Credit{selectedToEnrich !== 1 ? "s" : ""}</strong>.
+              This will consume <strong>{selectedToEnrich} Credit{selectedToEnrich !== 1 ? "s" : ""}</strong>.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setShowEnrichConfirm(false)}>Cancel</Button>

@@ -86,7 +86,7 @@ export default function SettingsPage() {
     setApolloMessage("");
     try {
       await settingsApi.setApolloKey(apolloKey.trim());
-      setApolloMessage("Apollo API key saved successfully!");
+      setApolloMessage("API key saved successfully!");
       setApolloKey("");
       loadApolloStatus();
     } catch (err) {
@@ -230,12 +230,12 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* === Apollo.io API Key === */}
+        {/* === Contact Database API Key === */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Apollo.io</CardTitle>
+            <CardTitle className="text-base">Contact Database</CardTitle>
             <p className="text-sm text-gray-500">
-              Connect your Apollo.io API key to search and import prospects.
+              Connect your contact database API key to search and import prospects in the Finder.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -251,7 +251,7 @@ export default function SettingsPage() {
 
             {apolloSource === "env" ? (
               <div className="p-3 bg-green-50 border border-green-200 rounded text-sm text-green-700">
-                ✓ API Key configured via environment variable (<code>APOLLO_API_KEY</code> in <code>backend/.env</code>)
+                ✓ API Key configured via environment variable
                 <p className="text-xs text-green-600 mt-1">
                   Override below if you want to use a different key at runtime.
                 </p>
@@ -262,7 +262,7 @@ export default function SettingsPage() {
             <div className="flex gap-2">
               <Input
                 type="password"
-                placeholder={apolloSource === "env" ? "Override key (optional)" : "Paste your Apollo API key here..."}
+                placeholder={apolloSource === "env" ? "Override key (optional)" : "Paste your contact database API key here..."}
                 value={apolloKey}
                 onChange={(e) => setApolloKey(e.target.value)}
                 className="flex-1"
@@ -280,7 +280,7 @@ export default function SettingsPage() {
 
             {apolloSource !== "env" && (
               <p className="text-xs text-gray-400">
-                Find your API key at Apollo.io &rarr; Settings &rarr; Integrations &rarr; API Keys.
+                Get your API key from your contact database provider&rsquo;s Settings → Integrations → API Keys.
                 The key is stored securely and never exposed to the frontend.
               </p>
             )}
