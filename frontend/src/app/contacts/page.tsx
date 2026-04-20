@@ -41,6 +41,7 @@ interface Contact {
   state: string | null;
   linkedin_url: string | null;
   website: string | null;
+  notes: string | null;
   ai_person_report: string | null;
   ai_company_report: string | null;
   ai_tags: string | null;
@@ -548,6 +549,23 @@ function ContactsContent() {
                   </div>
                 </div>
               )}
+
+              {/* --- Notes (inline editable multiline) --- */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Notes</h3>
+                <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                  <EditableField
+                    value={selectedContact.notes}
+                    onSave={(v) => updateField("notes", v)}
+                    placeholder="Add notes about this contact..."
+                    emptyLabel="Click to add notes"
+                    multiline
+                    maxLength={2000}
+                    className="block w-full"
+                    inputClassName="w-full min-h-[5rem]"
+                  />
+                </div>
+              </div>
 
               <Separator />
 
