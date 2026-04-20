@@ -461,18 +461,36 @@ Sign-off line: {signature_line}"""
 
 # === AI Suggested To-Do ===
 
+# In-memory per-user cache — 2h TTL
+# suggestions_cache[user_id] = {"data": {...}, "generated_at": datetime}
+_SUGGEST_CACHE: dict[int, dict] = {}
+_SUGGEST_CACHE_TTL = timedelta(hours=2)
+
+
 @router.get("/suggest-todos")
 async def suggest_todos(
+    force: bool = Query(False, description="Bypass cache and regenerate"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    基于用户最近 30 天的活动，让 Claude 生成 3 条具体可执行的待办建议。
-    返回格式: [{category, title, reason, action}, ...]
-      - HIGH: 高优先级再联系
-      - OPPORTUNITY: 批量操作机会
-      - INSIGHT: 行为观察 / coaching
+    Team-wide AI suggestions based on last 30d activity.
+
+    - 有缓存且 < 2h 且未 force → 返回缓存 + generated_at
+    - 否则调 Claude 生成，结果缓存 2h
+    - 空活动：立即返回 empty + 不缓存（下次还会检查）
     """
+    # 1) Cache lookup
+    if not force:
+        cached = _SUGGEST_CACHE.get(current_user.id)
+        if cached:
+            age = datetime.now(timezone.utc) - cached["generated_at"]
+            if age < _SUGGEST_CACHE_TTL:
+                # Return as-is with freshly computed age
+                resp = dict(cached["data"])
+                resp["generated_at"] = cached["generated_at"].isoformat()
+                resp["cached"] = True
+                return resp
     if not ai_service.ai_ready:
         raise HTTPException(status_code=400, detail="Anthropic API key not configured.")
 
@@ -547,7 +565,12 @@ Remember: respond ONLY with valid JSON. No markdown. No backticks. No preamble."
             "suggestions": [],
             "message": "AI returned unexpected format. Please refresh to try again.",
         }
-    return {"suggestions": parsed}
+
+    now = datetime.now(timezone.utc)
+    data = {"suggestions": parsed}
+    # Cache successful generation
+    _SUGGEST_CACHE[current_user.id] = {"data": data, "generated_at": now}
+    return {**data, "generated_at": now.isoformat(), "cached": False}
 
 
 def _parse_suggestions_json(raw: str):

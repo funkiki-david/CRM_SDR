@@ -408,8 +408,12 @@ export const aiApi = {
   search: (query: string, limit = 10) =>
     request("/api/ai/search", { method: "POST", body: JSON.stringify({ query, limit }) }),
 
-  /** AI Suggested To-Do — analyzes last 30d activity, returns 3 suggestions */
-  suggestTodos: () => request("/api/ai/suggest-todos"),
+  /**
+   * AI Suggested To-Do — analyzes last 30d activity, returns 3 suggestions.
+   * force=true bypasses the 2-hour cache and regenerates.
+   */
+  suggestTodos: (force = false) =>
+    request(`/api/ai/suggest-todos${force ? "?force=true" : ""}`),
 
   /** Current user's today AI spend + remaining limit */
   getUsage: () => request("/api/ai/usage"),

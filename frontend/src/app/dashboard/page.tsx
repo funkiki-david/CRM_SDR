@@ -80,6 +80,8 @@ interface AISuggestion {
 interface AISuggestionsResponse {
   suggestions: AISuggestion[];
   message?: string;
+  generated_at?: string;
+  cached?: boolean;
 }
 
 // ==================== Helpers ====================
@@ -697,6 +699,7 @@ const PRIORITY_STYLES: Record<string, { icon: string; label: string; color: stri
 function AISuggestionsSection() {
   const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(() => {
@@ -707,14 +710,15 @@ function AISuggestionsSection() {
     } catch { return new Set(); }
   });
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     setMessage(null);
     try {
-      const data = await aiApi.suggestTodos() as AISuggestionsResponse;
+      const data = await aiApi.suggestTodos(force) as AISuggestionsResponse;
       setSuggestions(data.suggestions || []);
       if (data.message) setMessage(data.message);
+      if (data.generated_at) setGeneratedAt(data.generated_at);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load suggestions");
     } finally {
@@ -737,17 +741,24 @@ function AISuggestionsSection() {
 
   return (
     <section>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <h2 className="text-lg font-semibold text-gray-900">🤖 AI Suggested To-Do</h2>
-        <button
-          onClick={load}
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => load(true)}
           disabled={loading}
-          className="text-xs text-blue-600 hover:underline"
+          className="text-xs h-7"
         >
-          {loading ? "Thinking…" : "Refresh"}
-        </button>
+          {loading ? "Generating..." : "Generate"}
+        </Button>
       </div>
-      <p className="text-xs text-gray-500 mb-3">Based on your last 30 days of activity</p>
+      <p className="text-xs text-gray-500 mb-3">
+        Based on team's last 30 days of activity
+        {generatedAt && !loading && (
+          <span className="ml-2 text-gray-400">· Last updated: {timeAgo(generatedAt)}</span>
+        )}
+      </p>
 
       {loading ? (
         <Card><CardContent className="py-6 text-sm text-gray-400">Analyzing your activity…</CardContent></Card>
@@ -757,7 +768,7 @@ function AISuggestionsSection() {
         <Card>
           <CardContent className="py-6 text-center text-sm text-gray-400">
             {suggestions.length > 0
-              ? "All suggestions dismissed. Click Refresh for new ones."
+              ? "All suggestions dismissed. Click Generate for new ones."
               : message
                 ? message
                 : "No suggestions yet — start logging activities to get AI recommendations!"}
