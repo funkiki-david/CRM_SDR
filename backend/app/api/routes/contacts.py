@@ -307,14 +307,34 @@ async def import_contacts(
             })
             continue
 
-        # Email dedup — only possible when email present
-        # 没 email 的行直接创建，不走重复检测
+        # Dedup strategy:
+        #   1) email present → match by email (primary key for known contacts)
+        #   2) email absent  → match by (first_name, last_name, company_name, phone)
+        #      so repeated sync of email-less rows (e.g. Doug's CA list) doesn't
+        #      duplicate
         existing = None
         if validated.email:
             existing_q = await db.execute(
                 select(Contact).where(Contact.email == validated.email)
             )
             existing = existing_q.scalar_one_or_none()
+        else:
+            # Composite key for email-less rows
+            fn = (validated.first_name or "").strip().lower()
+            ln = (validated.last_name or "").strip().lower()
+            co = (row.get("company_name") or "").strip().lower()
+            ph = (validated.phone or "").strip()
+            if fn and (co or ph):
+                existing_q = await db.execute(
+                    select(Contact).where(
+                        Contact.email.is_(None) | (Contact.email == ""),
+                        func.lower(Contact.first_name) == fn,
+                        func.lower(func.coalesce(Contact.last_name, "")) == ln,
+                        func.lower(func.coalesce(Contact.company_name, "")) == co,
+                        func.coalesce(Contact.phone, "") == ph,
+                    )
+                )
+                existing = existing_q.scalar_one_or_none()
 
         if existing:
             if update_existing:
