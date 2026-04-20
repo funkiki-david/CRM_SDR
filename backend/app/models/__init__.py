@@ -12,6 +12,7 @@ from app.models.email_template import EmailTemplate
 from app.models.sent_email import SentEmail, EmailStatus
 from app.models.ai_usage_log import AIUsageLog
 from app.models.app_setting import AppSetting
+from app.models.enrichment_log import EnrichmentLog
 
 __all__ = [
     "User", "UserRole",
@@ -24,4 +25,5 @@ __all__ = [
     "SentEmail", "EmailStatus",
     "AIUsageLog",
     "AppSetting",
+    "EnrichmentLog",
 ]

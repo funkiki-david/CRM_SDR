@@ -87,3 +87,9 @@ AI_MONTHLY_BUDGET_USD = 50.0        # Monthly cap
 
 # 研究报告缓存：同一个联系人多少天内复用已有报告
 AI_REPORT_CACHE_DAYS = 30
+
+# === Apollo Enrichment 额度 ===
+# Enrichment 单价 = 1 credit / 次
+# 每日上限 50 次，滚动 15 天上限 300 次
+ENRICH_DAILY_LIMIT = 50
+ENRICH_15DAYS_LIMIT = 300

@@ -124,6 +124,45 @@ class ApolloService:
             response.raise_for_status()
             return response.json()
 
+    async def enrich_by_name(
+        self,
+        first_name: str,
+        last_name: str = "",
+        company_name: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> Optional[dict]:
+        """
+        Match a person by name + company (or email). Consumes 1 Apollo credit.
+        Returns Apollo's "person" object or None if no match.
+
+        /v1/people/match prioritizes email; falls back to name + organization.
+        reveal_personal_emails=true 才能拿到 personal email（cost 多一个 credit）
+        """
+        payload: dict = {}
+        if email:
+            payload["email"] = email
+        if first_name:
+            payload["first_name"] = first_name
+        if last_name:
+            payload["last_name"] = last_name
+        if company_name:
+            payload["organization_name"] = company_name
+
+        if not payload:
+            return None
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{APOLLO_BASE_URL}/v1/people/match",
+                headers=self._headers(),
+                json=payload,
+            )
+            if response.status_code != 200:
+                # 200 with no match is normal; other codes mean real error
+                response.raise_for_status()
+            data = response.json()
+            return data.get("person")  # None if no match
+
     async def enrich_people_bulk(self, apollo_ids: list) -> list:
         """
         Enrich multiple people at once. Max 10 per request (Apollo limit).

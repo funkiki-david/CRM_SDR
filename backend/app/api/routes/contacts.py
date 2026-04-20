@@ -6,6 +6,7 @@ Includes ownership-based access control and dedup checking.
 import csv
 import io
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -14,15 +15,18 @@ from pydantic import ValidationError
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import ENRICH_DAILY_LIMIT, ENRICH_15DAYS_LIMIT
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User, UserRole
 from app.models.contact import Contact
 from app.models.activity import Activity, ActivityType
+from app.models.enrichment_log import EnrichmentLog
 from app.schemas.contact import (
     ContactCreate, ContactUpdate, ContactResponse, ContactListResponse,
     DedupCheckResponse,
 )
+from app.services.apollo import apollo_service
 
 router = APIRouter(prefix="/api/contacts", tags=["Contacts"])
 
@@ -577,5 +581,219 @@ async def delete_contact(
     await db.delete(contact)
     await db.flush()
     return None
+
+
+# === Enrich (Apollo People Match) ===
+
+# 5 个字段 enrich 关注的
+_ENRICH_FIELDS = ["mobile_phone", "office_phone", "email", "linkedin_url", "website"]
+
+
+async def _check_enrich_budget(db: AsyncSession) -> tuple[int, int]:
+    """Returns (used_today, used_last_15_days). Raises 429 if any limit reached."""
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    window_start = now - timedelta(days=15)
+
+    today_q = select(func.coalesce(func.sum(EnrichmentLog.credits_used), 0)).where(
+        EnrichmentLog.created_at >= today_start,
+        EnrichmentLog.status == "ok",
+    )
+    window_q = select(func.coalesce(func.sum(EnrichmentLog.credits_used), 0)).where(
+        EnrichmentLog.created_at >= window_start,
+        EnrichmentLog.status == "ok",
+    )
+    today_used = int((await db.execute(today_q)).scalar() or 0)
+    window_used = int((await db.execute(window_q)).scalar() or 0)
+
+    if today_used >= ENRICH_DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "reason": "daily_enrich_limit_exceeded",
+                "message": f"Daily enrichment limit reached ({today_used}/{ENRICH_DAILY_LIMIT}). Resets at midnight UTC.",
+                "used_today": today_used,
+                "daily_limit": ENRICH_DAILY_LIMIT,
+            },
+        )
+    if window_used >= ENRICH_15DAYS_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "reason": "15day_enrich_limit_exceeded",
+                "message": f"15-day enrichment limit reached ({window_used}/{ENRICH_15DAYS_LIMIT}).",
+                "used_last_15_days": window_used,
+                "limit_15_days": ENRICH_15DAYS_LIMIT,
+            },
+        )
+    return today_used, window_used
+
+
+@router.get("/enrich/status")
+async def enrich_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Current enrichment budget — for UI 'X / 50 today'"""
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    window_start = now - timedelta(days=15)
+
+    today = int((await db.execute(
+        select(func.coalesce(func.sum(EnrichmentLog.credits_used), 0))
+        .where(EnrichmentLog.created_at >= today_start, EnrichmentLog.status == "ok")
+    )).scalar() or 0)
+    window = int((await db.execute(
+        select(func.coalesce(func.sum(EnrichmentLog.credits_used), 0))
+        .where(EnrichmentLog.created_at >= window_start, EnrichmentLog.status == "ok")
+    )).scalar() or 0)
+
+    return {
+        "used_today": today,
+        "daily_limit": ENRICH_DAILY_LIMIT,
+        "used_last_15_days": window,
+        "limit_15_days": ENRICH_15DAYS_LIMIT,
+        "at_limit": today >= ENRICH_DAILY_LIMIT or window >= ENRICH_15DAYS_LIMIT,
+    }
+
+
+@router.post("/{contact_id}/enrich")
+async def enrich_contact(
+    contact_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Enrich contact info via Apollo People Match:
+      - 补齐空字段: mobile_phone / office_phone / email / linkedin_url / website
+      - 不覆盖已有数据（已填字段跳过）
+      - 受 ENRICH_DAILY_LIMIT / ENRICH_15DAYS_LIMIT 额度限制
+    Returns: {enriched_fields, skipped_fields, credits_used, used_today, daily_limit}
+    """
+    if not apollo_service.is_configured:
+        raise HTTPException(status_code=400, detail="Apollo API key not configured.")
+
+    contact = await db.get(Contact, contact_id)
+    if contact is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    # 预先检查当前状态 — 如果 5 个目标字段都已有数据，无需调 API
+    already_filled = []
+    for f in _ENRICH_FIELDS:
+        if getattr(contact, f, None):
+            already_filled.append(f)
+    if len(already_filled) == len(_ENRICH_FIELDS):
+        return {
+            "enriched_fields": [],
+            "skipped_fields": list(_ENRICH_FIELDS),
+            "credits_used": 0,
+            "message": "All fields already enriched — no credits consumed.",
+        }
+
+    # 额度熔断
+    await _check_enrich_budget(db)
+
+    # 调 Apollo
+    try:
+        person = await apollo_service.enrich_by_name(
+            first_name=contact.first_name,
+            last_name=contact.last_name or "",
+            company_name=contact.company_name,
+            email=contact.email,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Apollo API error: {e}")
+
+    if not person:
+        # 记无匹配但不扣 credit（Apollo 无匹配也可能不扣，保守处理 —— 仍记 log 标记 0）
+        db.add(EnrichmentLog(
+            user_id=current_user.id, contact_id=contact_id,
+            credits_used=0, status="no_match",
+        ))
+        await db.flush()
+        raise HTTPException(
+            status_code=404,
+            detail="No match found in Apollo. Try editing the contact name or company.",
+        )
+
+    # 从 Apollo payload 抽字段
+    org = person.get("organization") or {}
+    phone_numbers = person.get("phone_numbers") or []
+
+    # Apollo 可能按 type 区分 mobile / work
+    apollo_mobile = None
+    apollo_office = None
+    for pn in phone_numbers:
+        t = (pn.get("type") or "").lower()
+        number = pn.get("sanitized_number") or pn.get("raw_number")
+        if not number:
+            continue
+        if "mobile" in t or "cell" in t:
+            apollo_mobile = apollo_mobile or number
+        else:
+            apollo_office = apollo_office or number
+
+    candidates = {
+        "mobile_phone": apollo_mobile,
+        "office_phone": apollo_office or org.get("phone"),
+        "email": person.get("email"),
+        "linkedin_url": person.get("linkedin_url"),
+        "website": (org.get("website_url") or org.get("primary_domain")),
+    }
+    # website 如果 Apollo 返回 domain 无协议，补上 https://
+    w = candidates.get("website")
+    if w and not w.startswith(("http://", "https://")):
+        candidates["website"] = "https://" + w
+
+    enriched_fields = []
+    skipped_fields = []
+    for field, value in candidates.items():
+        current = getattr(contact, field, None)
+        if current:
+            skipped_fields.append(field)
+        elif value:
+            setattr(contact, field, value)
+            enriched_fields.append(field)
+        else:
+            skipped_fields.append(field)
+
+    # 存 apollo_id 以便将来去重 / 二次 enrich
+    if person.get("id") and not contact.apollo_id:
+        contact.apollo_id = person["id"]
+
+    # 记 log
+    db.add(EnrichmentLog(
+        user_id=current_user.id,
+        contact_id=contact_id,
+        credits_used=1,
+        status="ok",
+        matched_fields=" ".join(enriched_fields),
+    ))
+    await db.flush()
+
+    # 更新后的 budget 给前端
+    used_today = int((await db.execute(
+        select(func.coalesce(func.sum(EnrichmentLog.credits_used), 0))
+        .where(
+            EnrichmentLog.created_at >= datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0),
+            EnrichmentLog.status == "ok",
+        )
+    )).scalar() or 0)
+
+    return {
+        "enriched_fields": enriched_fields,
+        "skipped_fields": skipped_fields,
+        "credits_used": 1,
+        "used_today": used_today,
+        "daily_limit": ENRICH_DAILY_LIMIT,
+        "contact": {
+            "id": contact.id,
+            "mobile_phone": contact.mobile_phone,
+            "office_phone": contact.office_phone,
+            "email": contact.email,
+            "linkedin_url": contact.linkedin_url,
+            "website": contact.website,
+        },
+    }
 
 

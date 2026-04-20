@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { contactsApi, activitiesApi, aiApi } from "@/lib/api";
 
 // === Type definitions ===
@@ -47,6 +48,27 @@ interface Contact {
   ai_report_model: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// 5 fields the enrich endpoint tries to fill
+const ENRICH_FIELDS = ["mobile_phone", "office_phone", "email", "linkedin_url", "website"] as const;
+type EnrichField = (typeof ENRICH_FIELDS)[number];
+
+interface EnrichResponse {
+  enriched_fields: EnrichField[];
+  skipped_fields: EnrichField[];
+  credits_used: number;
+  used_today?: number;
+  daily_limit?: number;
+  message?: string;
+  contact?: {
+    id: number;
+    mobile_phone: string | null;
+    office_phone: string | null;
+    email: string | null;
+    linkedin_url: string | null;
+    website: string | null;
+  };
 }
 
 interface Activity {
@@ -93,6 +115,17 @@ function formatDateTime(dateStr: string): string {
   });
 }
 
+function enrichFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    mobile_phone: "📱 Mobile Phone",
+    office_phone: "☎️ Office Phone",
+    email: "✉️ Email",
+    linkedin_url: "🔗 LinkedIn",
+    website: "🌐 Website",
+  };
+  return labels[field] || field;
+}
+
 /** "Generated 3 days ago" / "Generated today" — 相对时间 */
 function relativeDays(dateStr: string | null): string | null {
   if (!dateStr) return null;
@@ -114,6 +147,9 @@ function ContactsContent() {
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const [emailComposeOpen, setEmailComposeOpen] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichResult, setEnrichResult] = useState<EnrichResponse | null>(null);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -322,6 +358,48 @@ function ContactsContent() {
                     {selectedContact.first_name} {selectedContact.last_name}
                   </h2>
                   <div className="flex gap-2">
+                    {(() => {
+                      const fullyEnriched = ENRICH_FIELDS.every(
+                        (f) => Boolean(selectedContact[f])
+                      );
+                      return (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={enriching || fullyEnriched}
+                          onClick={async () => {
+                            setEnriching(true);
+                            setEnrichError(null);
+                            try {
+                              const res = await contactsApi.enrich(selectedContact.id) as EnrichResponse;
+                              setEnrichResult(res);
+                              if (res.contact) {
+                                setSelectedContact({
+                                  ...selectedContact,
+                                  mobile_phone: res.contact.mobile_phone,
+                                  office_phone: res.contact.office_phone,
+                                  email: res.contact.email,
+                                  linkedin_url: res.contact.linkedin_url,
+                                  website: res.contact.website,
+                                });
+                              }
+                            } catch (e) {
+                              const msg = e instanceof Error ? e.message : "Enrich failed";
+                              // Surface budget + no-match specifically
+                              setEnrichError(msg);
+                            } finally {
+                              setEnriching(false);
+                            }
+                          }}
+                        >
+                          {enriching
+                            ? "Enriching..."
+                            : fullyEnriched
+                              ? "✓ Enriched"
+                              : "Enrich"}
+                        </Button>
+                      );
+                    })()}
                     <Button size="sm" variant="outline" onClick={notifyEmailDisabled}>
                       Send Email
                     </Button>
@@ -682,6 +760,59 @@ function ContactsContent() {
         usage={aiUsage}
         onClose={() => setShowLimitModal(false)}
       />
+
+      {/* Enrichment Result modal */}
+      <Dialog open={enrichResult !== null || !!enrichError} onOpenChange={(o) => { if (!o) { setEnrichResult(null); setEnrichError(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {enrichError ? "⚠️ Enrichment failed" : "✓ Enrichment complete"}
+            </DialogTitle>
+          </DialogHeader>
+          {enrichError ? (
+            <p className="text-sm text-red-600 py-3">{enrichError}</p>
+          ) : enrichResult && (
+            <div className="py-2 space-y-3 text-sm">
+              {enrichResult.enriched_fields.length > 0 && (
+                <div>
+                  <p className="font-medium text-gray-700 mb-1">Updated:</p>
+                  <ul className="space-y-0.5">
+                    {enrichResult.enriched_fields.map(f => (
+                      <li key={f} className="text-green-700">
+                        ✓ {enrichFieldLabel(f)}: <span className="text-gray-900">{String(enrichResult.contact?.[f] ?? "")}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {enrichResult.skipped_fields.length > 0 && (
+                <div>
+                  <p className="font-medium text-gray-700 mb-1">Skipped:</p>
+                  <ul className="space-y-0.5 text-gray-500">
+                    {enrichResult.skipped_fields.map(f => (
+                      <li key={f}>— {enrichFieldLabel(f)}: already existed or no Apollo data</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {enrichResult.message && (
+                <p className="text-xs text-gray-500 italic">{enrichResult.message}</p>
+              )}
+              {enrichResult.credits_used > 0 && enrichResult.used_today !== undefined && (
+                <p className="text-xs text-gray-500 pt-2 border-t">
+                  Credits used: {enrichResult.credits_used}{" "}
+                  <span className="text-gray-400">
+                    (Today: {enrichResult.used_today}/{enrichResult.daily_limit})
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => { setEnrichResult(null); setEnrichError(null); }}>OK</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Quick Entry dialog for logging activities from contact detail */}
       <QuickEntry

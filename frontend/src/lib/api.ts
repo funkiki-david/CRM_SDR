@@ -137,6 +137,13 @@ export const contactsApi = {
   checkEmail: (email: string) =>
     request(`/api/contacts/check-email?email=${encodeURIComponent(email)}`),
 
+  /** Apollo People Match — enrich empty fields on a contact */
+  enrich: (contactId: number) =>
+    request(`/api/contacts/${contactId}/enrich`, { method: "POST" }),
+
+  /** Enrichment budget status (today / 15-day rolling) */
+  enrichStatus: () => request(`/api/contacts/enrich/status`),
+
   /**
    * 批量导入 CSV。file 是 File 对象（来自 input[type=file] 或 drag-drop）。
    * 返回 {created, updated, skipped, failed, errors}。
