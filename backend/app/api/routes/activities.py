@@ -6,9 +6,13 @@ Provides:
   - Team activity feed (for dashboard)
 """
 
+import csv
+import io
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -22,6 +26,20 @@ from app.models.activity import Activity, ActivityType
 from app.schemas.activity import ActivityCreate, ActivityResponse
 
 router = APIRouter(prefix="/api/activities", tags=["Activities"])
+
+
+# === CSV columns for backup/sync ===
+# 用 email (not id) 做 contact/user 关联 —— 跨 DB 可移植（不同环境 id 可能不同）
+# Use email for contact/user reference so CSV round-trips across DBs.
+ACTIVITY_CSV_COLUMNS = [
+    "activity_type",
+    "subject",
+    "content",
+    "ai_summary",
+    "contact_email",
+    "user_email",
+    "created_at",
+]
 
 
 def _build_activity_response(activity: Activity) -> dict:
@@ -206,4 +224,140 @@ async def team_activity_feed(
         "items": [_build_activity_response(a) for a in activities],
         "total": total,
         "has_more": (offset + len(activities)) < total,
+    }
+
+
+# === CSV export / import for backup + sync ===
+
+@router.get("/export")
+async def export_activities(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    导出所有 activities 为 UTF-8 BOM CSV。用于每日 cloud backup。
+    字段用 email 关联 contact/user —— 可跨 DB 导入。
+    """
+    result = await db.execute(
+        select(Activity)
+        .options(joinedload(Activity.contact), joinedload(Activity.user))
+        .order_by(Activity.id)
+    )
+    activities = result.unique().scalars().all()
+
+    buffer = io.StringIO()
+    buffer.write("\ufeff")  # BOM for Excel
+    writer = csv.writer(buffer)
+    writer.writerow(ACTIVITY_CSV_COLUMNS)
+
+    for a in activities:
+        writer.writerow([
+            a.activity_type.value,
+            a.subject or "",
+            (a.content or "").replace("\r\n", " ").replace("\n", " "),
+            a.ai_summary or "",
+            a.contact.email if a.contact and a.contact.email else "",
+            a.user.email if a.user else "",
+            a.created_at.isoformat() if a.created_at else "",
+        ])
+
+    buffer.seek(0)
+    filename = f"activities_export_{len(activities)}.csv"
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/import")
+async def import_activities(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    批量导入 activities CSV。Admin only.
+    按 contact_email 找目标联系人；找不到的行计入 failed。
+    按 user_email 找 user；找不到就归属当前 Admin。
+    完全重复的 activity 不检测（可能产生副本 —— 纯追加模式）。
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Only Admin can bulk-import activities")
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            text = raw.decode("gbk")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="File encoding not supported (UTF-8 or GBK required)")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV missing header row")
+
+    # 预加载邮箱 → contact_id / user_id 映射（减少 N+1 query）
+    contact_map = {}
+    for c in (await db.execute(select(Contact.id, Contact.email))).all():
+        if c.email:
+            contact_map[c.email.lower()] = c.id
+
+    user_map = {}
+    for u in (await db.execute(select(User.id, User.email))).all():
+        user_map[u.email.lower()] = u.id
+
+    created = 0
+    failed = []
+    for row_num, row in enumerate(reader, start=2):
+        ce = (row.get("contact_email") or "").strip().lower()
+        if not ce:
+            failed.append({"row": row_num, "reason": "missing contact_email"})
+            continue
+        cid = contact_map.get(ce)
+        if cid is None:
+            failed.append({"row": row_num, "reason": f"no contact with email {ce}"})
+            continue
+
+        try:
+            at_enum = ActivityType((row.get("activity_type") or "note").strip().lower())
+        except ValueError:
+            failed.append({"row": row_num, "reason": f"invalid activity_type: {row.get('activity_type')}"})
+            continue
+
+        ue = (row.get("user_email") or "").strip().lower()
+        uid = user_map.get(ue, current_user.id)  # fall back to Admin if user not found
+
+        created_at = None
+        if row.get("created_at"):
+            try:
+                created_at = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+            except ValueError:
+                created_at = None
+
+        act = Activity(
+            activity_type=at_enum,
+            subject=(row.get("subject") or None),
+            content=(row.get("content") or None),
+            ai_summary=(row.get("ai_summary") or None),
+            contact_id=cid,
+            user_id=uid,
+        )
+        if created_at:
+            act.created_at = created_at
+
+        db.add(act)
+        created += 1
+
+    await db.flush()
+    return {
+        "created": created,
+        "failed": len(failed),
+        "errors": failed[:50],
     }
