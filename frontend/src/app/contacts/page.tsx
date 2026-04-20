@@ -5,7 +5,7 @@
  */
 "use client";
 
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/app-shell";
 import QuickEntry from "@/components/quick-entry";
@@ -174,17 +174,51 @@ function ContactsContent() {
   const { usage: aiUsage, refresh: refreshAIBudget } = useAIBudget();
   const [showLimitModal, setShowLimitModal] = useState(false);
 
-  // Load contact list
-  const loadContacts = useCallback(async (searchTerm?: string) => {
+  // 列表分页：每页 50，滚到底加载下一页
+  // Pagination: 50 per page, infinite scroll at bottom.
+  const PAGE_SIZE = 50;
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * 加载联系人：append=false 重置列表（首次或搜索变化时用），append=true 追加下一页。
+   * Backend 已支持 search（first/last/email/company/title ilike）+ skip + limit。
+   */
+  const loadContacts = useCallback(async (
+    searchTerm?: string,
+    append = false,
+    skip = 0,
+  ) => {
+    if (append) setLoadingMore(true);
     try {
-      const data = await contactsApi.list(searchTerm);
-      setContacts(data.contacts || []);
+      const data = await contactsApi.list(searchTerm, skip, PAGE_SIZE);
+      if (append) {
+        setContacts(prev => [...prev, ...(data.contacts || [])]);
+      } else {
+        setContacts(data.contacts || []);
+      }
+      setTotalCount(data.total || 0);
     } catch {
-      setContacts([]);
+      if (!append) setContacts([]);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
+
+  // 滚到底部自动加载下一页
+  const handleListScroll = useCallback(() => {
+    const el = listScrollRef.current;
+    if (!el || loadingMore) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    // 距底部 120px 内触发
+    if (scrollHeight - scrollTop - clientHeight < 120) {
+      if (contacts.length < totalCount) {
+        loadContacts(search || undefined, true, contacts.length);
+      }
+    }
+  }, [loadingMore, contacts.length, totalCount, search, loadContacts]);
 
   // Load activities for selected contact
   const loadActivities = useCallback(async (contactId: number) => {
@@ -215,10 +249,13 @@ function ContactsContent() {
     }
   }, [preselectedId, contacts, loadActivities]);
 
-  // Search with debounce
+  // Search with debounce — 重置列表，从 skip=0 开始
+  // Debounce search → reload page 1 (server-side filter)
   useEffect(() => {
     const timer = setTimeout(() => {
-      loadContacts(search || undefined);
+      // Reset scroll + reload from start
+      if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+      loadContacts(search || undefined, false, 0);
     }, 300);
     return () => clearTimeout(timer);
   }, [search, loadContacts]);
@@ -300,11 +337,18 @@ function ContactsContent() {
               <span className="text-xs text-gray-500">
                 {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select all"}
               </span>
+              <span className="text-xs text-gray-400 ml-auto">
+                Showing {contacts.length} of {totalCount}
+              </span>
             </div>
           )}
 
           {/* Contact list */}
-          <div className="flex-1 overflow-y-auto">
+          <div
+            ref={listScrollRef}
+            onScroll={handleListScroll}
+            className="flex-1 overflow-y-auto"
+          >
             {loading ? (
               <p className="text-sm text-gray-400 p-4">Loading...</p>
             ) : contacts.length === 0 ? (
@@ -352,6 +396,9 @@ function ContactsContent() {
                   </div>
                 </div>
               ))
+            )}
+            {loadingMore && (
+              <p className="text-xs text-gray-400 text-center py-3">Loading more…</p>
             )}
           </div>
         </div>
