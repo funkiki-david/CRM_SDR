@@ -94,7 +94,7 @@ async def get_follow_ups(
             "contact_id": lead.contact_id,
             "contact_name": f"{lead.contact.first_name} {lead.contact.last_name}",
             "contact_email": lead.contact.email,
-            "contact_phone": lead.contact.phone,
+            "contact_phone": lead.contact.mobile_phone or lead.contact.office_phone,
             "company": lead.contact.company_name,
             "title": lead.contact.title,
             "lead_status": lead.status.value,

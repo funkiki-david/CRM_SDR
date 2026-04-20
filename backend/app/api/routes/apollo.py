@@ -304,8 +304,9 @@ async def import_people(
             # Update existing contact (don't overwrite AI reports or manual notes)
             if person.get("title"):
                 existing.title = person["title"]
+            # Apollo search result's "phone" → office_phone (corporate line)
             if person.get("phone"):
-                existing.phone = person["phone"]
+                existing.office_phone = person["phone"]
             if person.get("linkedin_url"):
                 existing.linkedin_url = person["linkedin_url"]
             if person.get("company_name"):
@@ -331,7 +332,7 @@ async def import_people(
                 first_name=first_name,
                 last_name=last_name or "",
                 email=email or None,
-                phone=person.get("phone"),
+                office_phone=person.get("phone"),  # search result phone = corporate
                 title=person.get("title"),
                 company_name=person.get("company_name"),
                 company_domain=company_domain or None,

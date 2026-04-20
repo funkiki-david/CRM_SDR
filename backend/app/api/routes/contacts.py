@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/contacts", tags=["Contacts"])
 # === CSV Import/Export ===
 # 导出字段顺序也作为模板下载顺序，跟 ContactCreate 对齐
 CSV_EXPORT_COLUMNS = [
-    "first_name", "last_name", "email", "phone", "title",
+    "first_name", "last_name", "email", "mobile_phone", "office_phone", "title",
     "company_name", "company_domain", "industry", "company_size",
     "city", "state", "linkedin_url", "website",
     "industry_tags", "notes",
@@ -42,7 +42,12 @@ CSV_ALIAS_MAP = {
     "firstname": "first_name", "first name": "first_name", "fname": "first_name",
     "lastname": "last_name", "last name": "last_name", "lname": "last_name", "surname": "last_name",
     "email address": "email", "e-mail": "email", "mail": "email",
-    "phone number": "phone", "tel": "phone", "telephone": "phone", "mobile": "phone",
+    # Phone: 两个字段 mobile / office。Legacy "phone" 列默认映射到 office_phone
+    "phone": "office_phone", "phone number": "office_phone",
+    "tel": "office_phone", "telephone": "office_phone",
+    "office": "office_phone", "office phone": "office_phone", "work phone": "office_phone",
+    "mobile": "mobile_phone", "mobile phone": "mobile_phone",
+    "cell": "mobile_phone", "cell phone": "mobile_phone", "cellphone": "mobile_phone",
     "job title": "title", "position": "title", "role": "title",
     "company": "company_name", "organization": "company_name", "org": "company_name",
     "domain": "company_domain", "website domain": "company_domain",
@@ -183,7 +188,8 @@ async def export_contacts(
             c.first_name or "",
             c.last_name or "",
             c.email or "",
-            c.phone or "",
+            c.mobile_phone or "",
+            c.office_phone or "",
             c.title or "",
             c.company_name or "",
             c.company_domain or "",
@@ -286,7 +292,8 @@ async def import_contacts(
         }
         if row.get("email"):
             payload["email"] = row.get("email")
-        for key in ("phone", "title", "company_name", "company_domain",
+        for key in ("mobile_phone", "office_phone",
+                    "title", "company_name", "company_domain",
                     "industry", "company_size", "city", "state",
                     "linkedin_url", "website", "notes"):
             v = row.get(key)
@@ -309,9 +316,9 @@ async def import_contacts(
 
         # Dedup strategy:
         #   1) email present → match by email (primary key for known contacts)
-        #   2) email absent  → match by (first_name, last_name, company_name, phone)
+        #   2) email absent  → match by (first_name, last_name, company_name, office_phone)
         #      so repeated sync of email-less rows (e.g. Doug's CA list) doesn't
-        #      duplicate
+        #      duplicate. Uses office_phone only (mobile is optional).
         existing = None
         if validated.email:
             existing_q = await db.execute(
@@ -319,11 +326,10 @@ async def import_contacts(
             )
             existing = existing_q.scalar_one_or_none()
         else:
-            # Composite key for email-less rows
             fn = (validated.first_name or "").strip().lower()
             ln = (validated.last_name or "").strip().lower()
             co = (row.get("company_name") or "").strip().lower()
-            ph = (validated.phone or "").strip()
+            ph = (validated.office_phone or validated.phone or "").strip()
             if fn and (co or ph):
                 existing_q = await db.execute(
                     select(Contact).where(
@@ -331,14 +337,16 @@ async def import_contacts(
                         func.lower(Contact.first_name) == fn,
                         func.lower(func.coalesce(Contact.last_name, "")) == ln,
                         func.lower(func.coalesce(Contact.company_name, "")) == co,
-                        func.coalesce(Contact.phone, "") == ph,
+                        func.coalesce(Contact.office_phone, "") == ph,
                     )
                 )
                 existing = existing_q.scalar_one_or_none()
 
         if existing:
             if update_existing:
-                contact_data = validated.model_dump(exclude={"industry_tags"})
+                contact_data = validated.model_dump(exclude={"industry_tags", "phone"})
+                if validated.phone and not contact_data.get("office_phone"):
+                    contact_data["office_phone"] = validated.phone
                 for k, v in contact_data.items():
                     if v is not None:
                         setattr(existing, k, v)
@@ -351,7 +359,9 @@ async def import_contacts(
                 skipped += 1
             continue
 
-        contact_data = validated.model_dump(exclude={"industry_tags"})
+        contact_data = validated.model_dump(exclude={"industry_tags", "phone"})
+        if validated.phone and not contact_data.get("office_phone"):
+            contact_data["office_phone"] = validated.phone
         contact = Contact(
             **contact_data,
             owner_id=current_user.id,
@@ -427,7 +437,10 @@ async def create_contact(
             )
 
     # Build contact from data
-    contact_data = data.model_dump(exclude={"industry_tags"})
+    # Legacy "phone" input → office_phone (only if office_phone is empty)
+    contact_data = data.model_dump(exclude={"industry_tags", "phone"})
+    if data.phone and not contact_data.get("office_phone"):
+        contact_data["office_phone"] = data.phone
     contact = Contact(
         **contact_data,
         owner_id=current_user.id,
@@ -478,7 +491,9 @@ async def update_contact_full(
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    update_data = data.model_dump(exclude={"industry_tags"})
+    update_data = data.model_dump(exclude={"industry_tags", "phone"})
+    if data.phone and not update_data.get("office_phone"):
+        update_data["office_phone"] = data.phone
     for field, value in update_data.items():
         if value is not None:
             setattr(contact, field, value)
@@ -517,6 +532,11 @@ async def update_contact(
         contact.industry_tags_array = tags
         import json
         contact.ai_tags = json.dumps(tags)
+
+    # Legacy "phone" shim → office_phone (only if office_phone not also being set)
+    legacy_phone = update_data.pop("phone", None)
+    if legacy_phone and "office_phone" not in update_data:
+        update_data["office_phone"] = legacy_phone
 
     for field, value in update_data.items():
         setattr(contact, field, value)

@@ -14,7 +14,11 @@ class ContactCreate(BaseModel):
     first_name: str
     last_name: Optional[str] = ""           # 允许缺失（比如"Jeanne Sales"只有名）
     email: Optional[str] = None             # 允许缺失（phone-only 线索）
-    phone: Optional[str] = None
+    # Phone split: mobile (cell) vs office (landline/switchboard)
+    # CSV legacy "phone" column auto-maps to office_phone via CSV_ALIAS_MAP.
+    mobile_phone: Optional[str] = None
+    office_phone: Optional[str] = None
+    phone: Optional[str] = None  # legacy shim — value copied into office_phone
     title: Optional[str] = None
     company_name: Optional[str] = None
     company_domain: Optional[str] = None
@@ -53,13 +57,13 @@ class ContactCreate(BaseModel):
             raise ValueError("Please enter a valid email (like name@company.com)")
         return v.lower()
 
-    @field_validator("phone")
+    @field_validator("phone", "mobile_phone", "office_phone")
     @classmethod
     def phone_valid(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return None
         v = v.strip()[:30]
-        if v and not re.match(r"^[\d\s+\-()]+$", v):
+        if v and not re.match(r"^[\d\s+\-().x]+$", v):  # allow x for ext
             raise ValueError("Phone can only contain numbers and +-().")
         return v or None
 
@@ -98,7 +102,9 @@ class ContactUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[str] = None
-    phone: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    office_phone: Optional[str] = None
+    phone: Optional[str] = None  # legacy — copied to office_phone if provided
     title: Optional[str] = None
     company_name: Optional[str] = None
     company_domain: Optional[str] = None
@@ -119,7 +125,8 @@ class ContactResponse(BaseModel):
     first_name: str
     last_name: str
     email: Optional[str] = None
-    phone: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    office_phone: Optional[str] = None
     title: Optional[str] = None
     company_name: Optional[str] = None
     company_domain: Optional[str] = None

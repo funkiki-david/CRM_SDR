@@ -44,6 +44,24 @@ async def init_db():
             # Contact assignment: 当前负责跟进的 Manager
             "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS assigned_to INTEGER REFERENCES users(id)",
             "CREATE INDEX IF NOT EXISTS ix_contacts_assigned_to ON contacts(assigned_to)",
+            # Task 2: phone → mobile_phone + office_phone 拆分
+            # (1) 先 add mobile_phone (if not exists)
+            "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS mobile_phone VARCHAR(50)",
+            # (2) 重命名 phone → office_phone (幂等：只在还有 phone 时改)
+            # PostgreSQL 没有 RENAME COLUMN IF EXISTS，用 DO 块条件判断
+            """
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='contacts' AND column_name='phone'
+              ) THEN
+                ALTER TABLE contacts RENAME COLUMN phone TO office_phone;
+              END IF;
+            END $$
+            """,
+            # 如果连 office_phone 也不存在（新环境），补上
+            "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS office_phone VARCHAR(50)",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

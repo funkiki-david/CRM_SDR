@@ -28,7 +28,8 @@ interface Contact {
   first_name: string;
   last_name: string;
   email: string | null;
-  phone: string | null;
+  mobile_phone: string | null;
+  office_phone: string | null;
   title: string | null;
   company_name: string | null;
   company_domain: string | null;
@@ -344,9 +345,14 @@ function ContactsContent() {
                       </a>
                     </span>
                   )}
-                  {selectedContact.phone && (
+                  {selectedContact.mobile_phone && (
                     <span>
-                      <span className="text-gray-400">Phone:</span> {selectedContact.phone}
+                      <span className="text-gray-400">📱 Mobile:</span> {selectedContact.mobile_phone}
+                    </span>
+                  )}
+                  {selectedContact.office_phone && (
+                    <span>
+                      <span className="text-gray-400">☎️ Office:</span> {selectedContact.office_phone}
                     </span>
                   )}
                   {selectedContact.industry && (

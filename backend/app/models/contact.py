@@ -29,7 +29,10 @@ class Contact(Base):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[Optional[str]] = mapped_column(String(255), index=True)
-    phone: Mapped[Optional[str]] = mapped_column(String(50))
+    # 电话拆分为两个字段：手机 + 办公电话
+    # Phone split: mobile (cell) vs office (landline/switchboard)
+    mobile_phone: Mapped[Optional[str]] = mapped_column(String(50))
+    office_phone: Mapped[Optional[str]] = mapped_column(String(50))
 
     # === 工作信息 ===
     title: Mapped[Optional[str]] = mapped_column(String(200))          # 职位

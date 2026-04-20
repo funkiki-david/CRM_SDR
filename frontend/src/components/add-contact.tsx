@@ -35,7 +35,8 @@ interface FieldErrors {
   first_name?: string;
   last_name?: string;
   email?: string;
-  phone?: string;
+  mobile_phone?: string;
+  office_phone?: string;
   linkedin_url?: string;
   industry_tags?: string;
   notes?: string;
@@ -55,7 +56,8 @@ export default function AddContact({ open, onClose, onSuccess }: AddContactProps
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [mobilePhone, setMobilePhone] = useState("");
+  const [officePhone, setOfficePhone] = useState("");
   const [title, setTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [city, setCity] = useState("");
@@ -81,7 +83,8 @@ export default function AddContact({ open, onClose, onSuccess }: AddContactProps
   const [showDiscard, setShowDiscard] = useState(false);
 
   function resetForm() {
-    setFirstName(""); setLastName(""); setEmail(""); setPhone("");
+    setFirstName(""); setLastName(""); setEmail("");
+    setMobilePhone(""); setOfficePhone("");
     setTitle(""); setCompanyName(""); setCity(""); setState(""); setLinkedinUrl(""); setWebsite("");
     setTags([]); setTagInput(""); setNotes("");
     setErrors({}); setSaving(false); setSaved(false);
@@ -102,8 +105,12 @@ export default function AddContact({ open, onClose, onSuccess }: AddContactProps
     } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
       errs.email = "Please enter a valid email (like name@company.com)";
     }
-    if (phone.trim() && !/^[\d\s+\-()]+$/.test(phone.trim())) {
-      errs.phone = "Phone can only contain numbers and +-().";
+    const phoneRe = /^[\d\s+\-().x]+$/;
+    if (mobilePhone.trim() && !phoneRe.test(mobilePhone.trim())) {
+      errs.mobile_phone = "Mobile phone can only contain numbers and +-().x";
+    }
+    if (officePhone.trim() && !phoneRe.test(officePhone.trim())) {
+      errs.office_phone = "Office phone can only contain numbers and +-().x";
     }
     if (linkedinUrl.trim() && !linkedinUrl.toLowerCase().includes("linkedin.com")) {
       errs.linkedin_url = "Must be a LinkedIn URL (contains linkedin.com)";
@@ -147,7 +154,8 @@ export default function AddContact({ open, onClose, onSuccess }: AddContactProps
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
-      phone: phone.trim() || null,
+      mobile_phone: mobilePhone.trim() || null,
+      office_phone: officePhone.trim() || null,
       title: title.trim() || null,
       company_name: companyName.trim() || null,
       city: city.trim() || null,
@@ -209,7 +217,8 @@ export default function AddContact({ open, onClose, onSuccess }: AddContactProps
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           email: email.trim(),
-          phone: phone.trim() || null,
+          mobile_phone: mobilePhone.trim() || null,
+      office_phone: officePhone.trim() || null,
           title: title.trim() || null,
           company_name: companyName.trim() || null,
           city: city.trim() || null,
@@ -356,11 +365,18 @@ export default function AddContact({ open, onClose, onSuccess }: AddContactProps
               {/* Optional fields */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Phone</Label>
-                  <Input value={phone} onChange={(e) => { setPhone(e.target.value); markDirty(); }}
+                  <Label>📱 Mobile</Label>
+                  <Input value={mobilePhone} onChange={(e) => { setMobilePhone(e.target.value); markDirty(); }}
                     placeholder="+1-555-0100" maxLength={30}
-                    className={errors.phone ? "border-red-400" : ""} />
-                  <FieldError msg={errors.phone} />
+                    className={errors.mobile_phone ? "border-red-400" : ""} />
+                  <FieldError msg={errors.mobile_phone} />
+                </div>
+                <div>
+                  <Label>☎️ Office</Label>
+                  <Input value={officePhone} onChange={(e) => { setOfficePhone(e.target.value); markDirty(); }}
+                    placeholder="+1-800-0000" maxLength={30}
+                    className={errors.office_phone ? "border-red-400" : ""} />
+                  <FieldError msg={errors.office_phone} />
                 </div>
                 <div>
                   <Label>Title</Label>
