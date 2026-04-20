@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EditableField } from "@/components/editable-field";
 import { contactsApi, activitiesApi, aiApi } from "@/lib/api";
 
 // === Type definitions ===
@@ -150,6 +151,17 @@ function ContactsContent() {
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState<EnrichResponse | null>(null);
   const [enrichError, setEnrichError] = useState<string | null>(null);
+
+  // PATCH one field then merge the response back into selectedContact
+  // 失败抛异常，让 <EditableField> 的 onSave 捕获显示红边框
+  const updateField = async (field: keyof Contact, value: string): Promise<void> => {
+    if (!selectedContact) return;
+    const payload = { [field]: value || null } as Record<string, string | null>;
+    const updated = await contactsApi.update(selectedContact.id, payload) as Contact;
+    setSelectedContact(updated);
+    // Also refresh left-panel list so name/company changes reflect there
+    loadContacts();
+  };
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -354,8 +366,19 @@ function ContactsContent() {
               {/* --- Basic Info + Log Activity button --- */}
               <div>
                 <div className="flex items-start justify-between">
-                  <h2 className="text-xl font-semibold text-gray-900">
-                    {selectedContact.first_name} {selectedContact.last_name}
+                  <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-1">
+                    <EditableField
+                      value={selectedContact.first_name}
+                      onSave={(v) => updateField("first_name", v)}
+                      placeholder="First name"
+                      emptyLabel="(first)"
+                    />
+                    <EditableField
+                      value={selectedContact.last_name}
+                      onSave={(v) => updateField("last_name", v)}
+                      placeholder="Last name"
+                      emptyLabel="(last)"
+                    />
                   </h2>
                   <div className="flex gap-2">
                     {(() => {
@@ -408,31 +431,53 @@ function ContactsContent() {
                     </Button>
                   </div>
                 </div>
-                {selectedContact.title && (
-                  <p className="text-gray-600">
-                    {selectedContact.title}
-                    {selectedContact.company_name && ` at ${selectedContact.company_name}`}
-                  </p>
-                )}
+                <p className="text-gray-600 mt-1">
+                  <EditableField
+                    value={selectedContact.title}
+                    onSave={(v) => updateField("title", v)}
+                    placeholder="Title"
+                    emptyLabel="Add title"
+                  />
+                  <span className="text-gray-400 mx-1">@</span>
+                  <EditableField
+                    value={selectedContact.company_name}
+                    onSave={(v) => updateField("company_name", v)}
+                    placeholder="Company"
+                    emptyLabel="Add company"
+                  />
+                </p>
                 <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 text-sm text-gray-500">
-                  {selectedContact.email && (
-                    <span>
-                      <span className="text-gray-400">Email:</span>{" "}
-                      <a href={`mailto:${selectedContact.email}`} className="text-blue-600 hover:underline">
-                        {selectedContact.email}
-                      </a>
-                    </span>
-                  )}
-                  {selectedContact.mobile_phone && (
-                    <span>
-                      <span className="text-gray-400">📱 Mobile:</span> {selectedContact.mobile_phone}
-                    </span>
-                  )}
-                  {selectedContact.office_phone && (
-                    <span>
-                      <span className="text-gray-400">☎️ Office:</span> {selectedContact.office_phone}
-                    </span>
-                  )}
+                  <span>
+                    <span className="text-gray-400">Email:</span>{" "}
+                    <EditableField
+                      value={selectedContact.email}
+                      onSave={(v) => updateField("email", v)}
+                      placeholder="name@company.com"
+                      emptyLabel="Add email"
+                      type="email"
+                      validate={(v) => v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? "Invalid email" : null}
+                    />
+                  </span>
+                  <span>
+                    <span className="text-gray-400">📱 Mobile:</span>{" "}
+                    <EditableField
+                      value={selectedContact.mobile_phone}
+                      onSave={(v) => updateField("mobile_phone", v)}
+                      placeholder="+1-555-0100"
+                      emptyLabel="Add mobile"
+                      validate={(v) => v && !/^[\d\s+\-().x]+$/.test(v) ? "Digits and +-() only" : null}
+                    />
+                  </span>
+                  <span>
+                    <span className="text-gray-400">☎️ Office:</span>{" "}
+                    <EditableField
+                      value={selectedContact.office_phone}
+                      onSave={(v) => updateField("office_phone", v)}
+                      placeholder="+1-800-0000"
+                      emptyLabel="Add office"
+                      validate={(v) => v && !/^[\d\s+\-().x]+$/.test(v) ? "Digits and +-() only" : null}
+                    />
+                  </span>
                   {selectedContact.industry && (
                     <span>
                       <span className="text-gray-400">Industry:</span> {selectedContact.industry}
@@ -443,11 +488,25 @@ function ContactsContent() {
                       <span className="text-gray-400">Company size:</span> {selectedContact.company_size}
                     </span>
                   )}
-                  {(selectedContact.city || selectedContact.state) && (
-                    <span>
-                      <span className="text-gray-400">Location:</span> {[selectedContact.city, selectedContact.state].filter(Boolean).join(", ")}
-                    </span>
-                  )}
+                  <span>
+                    <span className="text-gray-400">City:</span>{" "}
+                    <EditableField
+                      value={selectedContact.city}
+                      onSave={(v) => updateField("city", v)}
+                      placeholder="Dallas"
+                      emptyLabel="Add city"
+                    />
+                  </span>
+                  <span>
+                    <span className="text-gray-400">State:</span>{" "}
+                    <EditableField
+                      value={selectedContact.state}
+                      onSave={(v) => updateField("state", v)}
+                      placeholder="TX"
+                      emptyLabel="—"
+                      maxLength={50}
+                    />
+                  </span>
                 </div>
               </div>
 
@@ -455,47 +514,24 @@ function ContactsContent() {
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-gray-400 w-16 shrink-0">LinkedIn:</span>
-                  {selectedContact.linkedin_url ? (
-                    <a href={selectedContact.linkedin_url} target="_blank" rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline truncate">
-                      {selectedContact.linkedin_url.replace(/^https?:\/\/(www\.)?/, "")}
-                    </a>
-                  ) : (
-                    <span className="text-gray-300 flex items-center gap-1.5">
-                      Not available
-                      <button
-                        onClick={() => {
-                          const url = prompt("Enter LinkedIn URL:");
-                          if (url) contactsApi.update(selectedContact.id, { linkedin_url: url }).then(() => {
-                            setSelectedContact({ ...selectedContact, linkedin_url: url });
-                          });
-                        }}
-                        className="text-xs text-blue-500 hover:underline"
-                      >[+ Add]</button>
-                    </span>
-                  )}
+                  <EditableField
+                    value={selectedContact.linkedin_url}
+                    onSave={(v) => updateField("linkedin_url", v)}
+                    placeholder="https://linkedin.com/in/..."
+                    emptyLabel="Add LinkedIn"
+                    type="url"
+                    validate={(v) => v && !v.toLowerCase().includes("linkedin.com") ? "Must contain linkedin.com" : null}
+                  />
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-gray-400 w-16 shrink-0">Website:</span>
-                  {selectedContact.website ? (
-                    <a href={selectedContact.website} target="_blank" rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline truncate">
-                      {selectedContact.website.replace(/^https?:\/\/(www\.)?/, "")}
-                    </a>
-                  ) : (
-                    <span className="text-gray-300 flex items-center gap-1.5">
-                      Not available
-                      <button
-                        onClick={() => {
-                          const url = prompt("Enter website URL:");
-                          if (url) contactsApi.update(selectedContact.id, { website: url }).then(() => {
-                            setSelectedContact({ ...selectedContact, website: url });
-                          });
-                        }}
-                        className="text-xs text-blue-500 hover:underline"
-                      >[+ Add]</button>
-                    </span>
-                  )}
+                  <EditableField
+                    value={selectedContact.website}
+                    onSave={(v) => updateField("website", v)}
+                    placeholder="https://company.com"
+                    emptyLabel="Add website"
+                    type="url"
+                  />
                 </div>
               </div>
 
