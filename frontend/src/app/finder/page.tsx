@@ -6,13 +6,14 @@
  *    - State (多选) + City 与搜索按钮同行
  *    - 至少填一个才能搜
  *
- *  Refine Results (筛选项，灰色，默认折叠):
- *    - Industry / Seniority / Company Size / Annual Revenue (全部 checkbox 多选)
- *    - 改动时自动重新搜索（首次 Search 之后）
+ *  AI Keyword Finder (灰色，默认折叠):
+ *    - 用户输入行业/类型描述 → Claude Haiku 生成 industries + keywords
+ *    - 勾选后 Apply 用作 Apollo 搜索过滤
+ *    - Applied 标签显示在搜索区上方，✕ 可清除
  */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { apolloApi } from "@/lib/api";
+import { apolloApi, aiApi } from "@/lib/api";
 
 interface SearchResult {
   [key: string]: unknown;
@@ -73,36 +74,6 @@ const US_STATES = [
   "Wisconsin", "Wyoming",
 ];
 
-const INDUSTRIES = [
-  { id: "printing", label: "Printing" },
-  { id: "signage", label: "Signage" },
-  { id: "manufacturing", label: "Manufacturing" },
-  { id: "marketing", label: "Marketing" },
-];
-
-const SENIORITIES = [
-  { val: "manager", label: "Manager" },
-  { val: "director", label: "Director" },
-  { val: "vp", label: "VP" },
-  { val: "c_suite", label: "C-Suite" },
-  { val: "founder", label: "Founder" },
-];
-
-const COMPANY_SIZES = [
-  { val: "1,10", label: "1-10" },
-  { val: "11,50", label: "11-50" },
-  { val: "51,200", label: "51-200" },
-  { val: "201,500", label: "201-500" },
-  { val: "501,10000", label: "500+" },
-];
-
-const REVENUES = [
-  { val: "0,1000000", label: "<$1M" },
-  { val: "1000000,10000000", label: "$1M-$10M" },
-  { val: "10000000,50000000", label: "$10M-$50M" },
-  { val: "50000000,10000000000", label: "$50M+" },
-];
-
 export default function FinderPage() {
   const router = useRouter();
 
@@ -115,12 +86,18 @@ export default function FinderPage() {
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [city, setCity] = useState("");
 
-  // === Refine Filters ===
-  const [industry, setIndustry] = useState<string[]>([]);
-  const [seniority, setSeniority] = useState<string[]>([]);
-  const [employeeRange, setEmployeeRange] = useState<string[]>([]);
-  const [revenueRange, setRevenueRange] = useState<string[]>([]);
-  const [refineOpen, setRefineOpen] = useState(false);
+  // === AI Keyword Finder ===
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiInput, setAiInput] = useState("");
+  const [aiSuggesting, setAiSuggesting] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiIndustries, setAiIndustries] = useState<string[]>([]);
+  const [aiKeywords, setAiKeywords] = useState<string[]>([]);
+  const [selIndustries, setSelIndustries] = useState<Set<string>>(new Set());
+  const [selKeywords, setSelKeywords] = useState<Set<string>>(new Set());
+  // Applied = the ones actually used in the last Apply-to-Search click
+  const [appliedIndustries, setAppliedIndustries] = useState<string[]>([]);
+  const [appliedKeywords, setAppliedKeywords] = useState<string[]>([]);
 
   // Guide visibility — default expanded on first visit, persisted via localStorage
   const [showGuide, setShowGuide] = useState(() => {
@@ -157,12 +134,13 @@ export default function FinderPage() {
     selectedStates.length > 0 || city.trim()
   );
 
-  // === 有任何筛选项被改 ===
-  const hasRefineFilters =
-    industry.length > 0 || seniority.length > 0 ||
-    employeeRange.length > 0 || revenueRange.length > 0;
+  // === 有任何 AI 关键词被 Apply ===
+  const hasAppliedAi = appliedIndustries.length > 0 || appliedKeywords.length > 0;
 
-  async function handleSearch(page = 1) {
+  async function handleSearch(
+    page = 1,
+    overrides?: { industries?: string[]; keywords?: string[] },
+  ) {
     setSearching(true);
     setSearchError("");
     setImportReport(null);
@@ -172,16 +150,15 @@ export default function FinderPage() {
     // Primary
     if (companyName.trim()) filters.q_organization_name = companyName.trim();
     if (domain.trim()) filters.company_domain = domain.trim();
-    if (keywords.trim()) filters.q_organization_keyword_tags = keywords.split(",").map(k => k.trim()).filter(Boolean);
+    const primaryKeywordTags = keywords.split(",").map(k => k.trim()).filter(Boolean);
     // LinkedIn URL + Person Name 都走 Apollo 的 free-text q_keywords
     const freeTextParts = [linkedinUrl.trim(), personName.trim()].filter(Boolean);
     if (freeTextParts.length > 0) filters.q_keywords = freeTextParts.join(" ");
 
-    // Refine (AND 关系，每加一个缩小范围)
+    // Location (State + City)
     if (selectedStates.length > 0) {
       const locs = selectedStates.map(s => `${s}, US`);
       if (city.trim()) {
-        // 城市和州组合，Apollo 会按每个 location 做 OR
         filters.person_locations = selectedStates.map(s => `${city.trim()}, ${s}, US`);
       } else {
         filters.person_locations = locs;
@@ -189,10 +166,13 @@ export default function FinderPage() {
     } else if (city.trim()) {
       filters.person_locations = [city.trim()];
     }
-    if (industry.length) filters.organization_industry_tag_ids = industry;
-    if (seniority.length) filters.person_seniorities = seniority;
-    if (employeeRange.length) filters.employee_ranges = employeeRange;
-    if (revenueRange.length) filters.revenue_ranges = revenueRange;
+
+    // AI-applied industries/keywords (overrides = this-click apply, else use state)
+    const indUsed = overrides?.industries ?? appliedIndustries;
+    const kwUsed = overrides?.keywords ?? appliedKeywords;
+    if (indUsed.length) filters.organization_industry_tag_ids = indUsed;
+    const mergedTags = [...primaryKeywordTags, ...kwUsed];
+    if (mergedTags.length) filters.q_organization_keyword_tags = mergedTags;
 
     try {
       const data = await apolloApi.search(filters);
@@ -209,21 +189,45 @@ export default function FinderPage() {
     }
   }
 
-  // === 首次搜索后，Refine 改动自动重搜 ===
-  // 用 ref 记录上一次 refine 状态，避免重复搜索
-  const firstSearchDone = useRef(false);
-  const refineKey = JSON.stringify({
-    industry, seniority, employeeRange, revenueRange,
-  });
+  async function handleGenerateKeywords() {
+    const input = aiInput.trim();
+    if (!input || aiSuggesting) return;
+    setAiSuggesting(true);
+    setAiError("");
+    try {
+      const data = await aiApi.suggestKeywords(input);
+      setAiIndustries(Array.isArray(data.industries) ? data.industries : []);
+      setAiKeywords(Array.isArray(data.keywords) ? data.keywords : []);
+      setSelIndustries(new Set());
+      setSelKeywords(new Set());
+      if (data.message && !data.industries?.length && !data.keywords?.length) {
+        setAiError(data.message);
+      }
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "AI keyword suggestion is unavailable. Please try again.");
+      setAiIndustries([]);
+      setAiKeywords([]);
+    } finally {
+      setAiSuggesting(false);
+    }
+  }
 
-  useEffect(() => {
-    if (!hasSearched) { firstSearchDone.current = true; return; }
-    if (!firstSearchDone.current) { firstSearchDone.current = true; return; }
-    // 防抖：城市输入时避免每次按键都搜索
-    const timer = setTimeout(() => handleSearch(1), 350);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refineKey]);
+  function handleApplyAi() {
+    const inds = Array.from(selIndustries);
+    const kws = Array.from(selKeywords);
+    setAppliedIndustries(inds);
+    setAppliedKeywords(kws);
+    setAiOpen(false);
+    handleSearch(1, { industries: inds, keywords: kws });
+  }
+
+  function clearAppliedAi() {
+    setAppliedIndustries([]);
+    setAppliedKeywords([]);
+    setSelIndustries(new Set());
+    setSelKeywords(new Set());
+    if (hasSearched) handleSearch(1, { industries: [], keywords: [] });
+  }
 
   function toggleSelect(apolloId: string) {
     setSelected(prev => {
@@ -297,13 +301,16 @@ export default function FinderPage() {
     setSelectedStates([]); setCity("");
   }
 
-  function clearRefineFilters() {
-    setIndustry([]); setSeniority([]); setEmployeeRange([]); setRevenueRange([]);
-  }
-
   function toggleMulti(value: string, arr: string[], setter: (v: string[]) => void) {
     if (arr.includes(value)) setter(arr.filter(v => v !== value));
     else setter([...arr, value]);
+  }
+
+  function toggleSet(value: string, set: Set<string>, setter: (v: Set<string>) => void) {
+    const next = new Set(set);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    setter(next);
   }
 
   return (
@@ -328,55 +335,28 @@ export default function FinderPage() {
           )}
         </div>
 
-        {/* === How-to Guide (collapsible) === */}
+        {/* === Intro Guide (dismissible) === */}
         {showGuide && (
-          <div className="p-5 bg-blue-50 rounded-lg border border-blue-100">
-            <div className="flex items-center justify-between mb-4">
-              <p className="font-medium text-sm text-gray-900 flex items-center gap-1.5">
-                <span className="text-base">📖</span> How to Use Prospect Finder
-              </p>
-              <button
-                onClick={() => toggleGuide(false)}
-                className="text-xs text-gray-500 hover:text-gray-700"
-              >
-                Hide Guide
-              </button>
-            </div>
-
-            <ol className="space-y-3 text-sm text-gray-700">
-              <li>
-                <p className="font-semibold text-gray-900">1. Start with a Search</p>
-                <p className="text-gray-600 mt-0.5 text-xs">
-                  Enter at least one search term in the Primary Search area: company name,
-                  domain, keywords, LinkedIn URL, person name, State, or City.
-                </p>
-              </li>
-              <li>
-                <p className="font-semibold text-gray-900">2. Refine Your Results <span className="font-normal text-gray-400">(Optional)</span></p>
-                <p className="text-gray-600 mt-0.5 text-xs">
-                  Click &ldquo;Refine Results&rdquo; to narrow down by industry,
-                  seniority, company size, or revenue range.
-                </p>
-              </li>
-              <li>
-                <p className="font-semibold text-gray-900">3. Review &amp; Import</p>
-                <p className="text-gray-600 mt-0.5 text-xs">
-                  Browse the results, select the contacts you want, then click
-                  &ldquo;Import to CRM&rdquo; to add them to your contact list.
-                </p>
-              </li>
-            </ol>
-
-            <div className="mt-4 pt-3 border-t border-blue-200">
-              <p className="font-semibold text-sm text-gray-900 mb-1.5">💡 Tips</p>
-              <ul className="space-y-1 text-xs text-gray-600 list-disc pl-5">
-                <li>Search is free — credits are only used when importing contacts</li>
-                <li>Use <b>Keywords</b> for broad searches (e.g. &ldquo;sign shop&rdquo;)</li>
-                <li>Use <b>Company Domain</b> for exact matches (e.g. acme.com)</li>
-                <li>Combine search + filters for best results</li>
-                <li><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1 align-middle"></span>Green badge = new contact &nbsp;·&nbsp; <span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-1 align-middle"></span>Blue badge = already in your CRM</li>
-              </ul>
-            </div>
+          <div className="relative p-5 bg-gray-50 rounded-lg border border-gray-200">
+            <button
+              onClick={() => toggleGuide(false)}
+              className="absolute top-2 right-3 text-gray-400 hover:text-gray-600 text-lg leading-none"
+              aria-label="Dismiss guide"
+            >
+              ✕
+            </button>
+            <p className="font-semibold text-sm text-gray-900 flex items-center gap-1.5">
+              <span className="text-base">🔍</span> Find Your Next Prospects
+            </p>
+            <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+              Search by location to find prospects, or use AI Keyword Finder to discover
+              industry-specific search terms that match real companies on Apollo&apos;s
+              database of 210M+ contacts.
+            </p>
+            <p className="text-xs text-gray-500 mt-2">
+              <span className="font-medium text-gray-700">How it works:</span>{" "}
+              Select location → Search → Select prospects → Import to CRM
+            </p>
           </div>
         )}
 
@@ -477,77 +457,144 @@ export default function FinderPage() {
           </CardContent>
         </Card>
 
-        {/* === Refine Results (collapsible) === */}
+        {/* === Applied AI filters chip row === */}
+        {hasAppliedAi && (
+          <div className="flex items-center flex-wrap gap-1.5 text-xs text-gray-600">
+            <span className="text-gray-500 shrink-0">Filters:</span>
+            {[...appliedIndustries, ...appliedKeywords].slice(0, 3).map(k => (
+              <span key={k} className="bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
+                {k}
+              </span>
+            ))}
+            {(appliedIndustries.length + appliedKeywords.length) > 3 && (
+              <span className="text-gray-500">
+                +{appliedIndustries.length + appliedKeywords.length - 3} more
+              </span>
+            )}
+            <button
+              onClick={clearAppliedAi}
+              className="ml-1 text-gray-400 hover:text-gray-700"
+              title="Clear AI filters"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* === AI Keyword Finder (collapsible) === */}
         <div className="bg-gray-50 rounded border border-gray-200">
           <button
-            onClick={() => setRefineOpen(v => !v)}
+            onClick={() => setAiOpen(v => !v)}
             className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-gray-100 transition"
           >
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-gray-700">
-                {refineOpen ? "▼" : "▶"} Refine Results
+                {aiOpen ? "▼" : "▶"} AI Keyword Finder
               </span>
-              <span className="text-xs text-gray-400">(optional filters)</span>
-              {hasRefineFilters && (
+              <span className="text-xs text-gray-400">(optional)</span>
+              {hasAppliedAi && (
                 <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-blue-50 text-blue-700">
-                  {industry.length + seniority.length +
-                   employeeRange.length + revenueRange.length} active
+                  {appliedIndustries.length + appliedKeywords.length} applied
                 </Badge>
               )}
             </div>
-            {hasRefineFilters && (
-              <span
-                role="button"
-                tabIndex={0}
-                onClick={(e) => { e.stopPropagation(); clearRefineFilters(); }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); clearRefineFilters(); }
-                }}
-                className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer"
-              >
-                Clear Filters
-              </span>
-            )}
           </button>
 
-          {refineOpen && (
-            <div className="px-5 pb-5 space-y-5 pt-4">
-              {/* Industry */}
-              <FilterGroup
-                label="Industry"
-                options={INDUSTRIES.map(i => ({ val: i.id, label: i.label }))}
-                selected={industry}
-                onToggle={(v) => toggleMulti(v, industry, setIndustry)}
-              />
-
-              {/* Seniority */}
-              <FilterGroup
-                label="Seniority"
-                options={SENIORITIES}
-                selected={seniority}
-                onToggle={(v) => toggleMulti(v, seniority, setSeniority)}
-              />
-
-              {/* Company Size */}
-              <FilterGroup
-                label="Company Size (employees)"
-                options={COMPANY_SIZES}
-                selected={employeeRange}
-                onToggle={(v) => toggleMulti(v, employeeRange, setEmployeeRange)}
-              />
-
-              {/* Revenue */}
-              <FilterGroup
-                label="Annual Revenue"
-                options={REVENUES}
-                selected={revenueRange}
-                onToggle={(v) => toggleMulti(v, revenueRange, setRevenueRange)}
-              />
-
-              {hasSearched && (
-                <p className="text-[11px] text-gray-400 pt-2 border-t border-gray-200">
-                  Filters apply automatically — results update as you select.
+          {aiOpen && (
+            <div className="px-5 pb-5 pt-1 space-y-4">
+              <div className="text-xs text-gray-600 leading-relaxed">
+                <p className="flex items-center gap-1.5 font-semibold text-gray-900 text-sm mb-1">
+                  <span>🤖</span> AI Keyword Finder
                 </p>
+                <p>
+                  Describe the industry or type of company you&apos;re looking for.
+                  AI will suggest 20-40 relevant keywords that match real companies on Apollo.
+                </p>
+                <p className="mt-1">
+                  Select the ones that fit your target, then click Apply to refine your search results.
+                </p>
+                <p className="mt-1 text-gray-400">
+                  Example: Try &ldquo;signage&rdquo;, &ldquo;commercial printing&rdquo;, or &ldquo;LED display manufacturers&rdquo;
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); handleGenerateKeywords(); }
+                  }}
+                  placeholder="e.g. signage, printing, LED"
+                  className="h-9 bg-white flex-1"
+                  disabled={aiSuggesting}
+                />
+                <Button
+                  onClick={handleGenerateKeywords}
+                  disabled={aiSuggesting || !aiInput.trim()}
+                  className="h-9 shrink-0"
+                >
+                  {aiSuggesting ? "Generating..." : "✨ Generate"}
+                </Button>
+              </div>
+
+              {aiSuggesting && (
+                <p className="text-xs text-gray-500 animate-pulse">Generating keywords...</p>
+              )}
+              {aiError && !aiSuggesting && (
+                <p className="text-xs text-red-600">{aiError}</p>
+              )}
+
+              {!aiSuggesting && (aiIndustries.length > 0 || aiKeywords.length > 0) && (
+                <div className="space-y-4 pt-2 border-t border-gray-200">
+                  {aiIndustries.length > 0 && (
+                    <div>
+                      <Label className="text-xs font-medium text-gray-700 flex items-center gap-1">
+                        🏭 Industries
+                      </Label>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {aiIndustries.map(name => (
+                          <CheckChip
+                            key={name}
+                            label={name}
+                            checked={selIndustries.has(name)}
+                            onToggle={() => toggleSet(name, selIndustries, setSelIndustries)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {aiKeywords.length > 0 && (
+                    <div>
+                      <Label className="text-xs font-medium text-gray-700 flex items-center gap-1">
+                        🏷️ Keywords
+                      </Label>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {aiKeywords.map(name => (
+                          <CheckChip
+                            key={name}
+                            label={name}
+                            checked={selKeywords.has(name)}
+                            onToggle={() => toggleSet(name, selKeywords, setSelKeywords)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                    <p className="text-xs text-gray-600">
+                      Selected: {selIndustries.size + selKeywords.size} keyword{(selIndustries.size + selKeywords.size) !== 1 ? "s" : ""}
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={handleApplyAi}
+                      disabled={selIndustries.size + selKeywords.size === 0}
+                    >
+                      Apply to Search
+                    </Button>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -849,46 +896,35 @@ function PrimaryField({
   );
 }
 
-function FilterGroup({
-  label, options, selected, onToggle,
+function CheckChip({
+  label, checked, onToggle,
 }: {
   label: string;
-  options: { val: string; label: string }[];
-  selected: string[];
-  onToggle: (val: string) => void;
+  checked: boolean;
+  onToggle: () => void;
 }) {
   return (
-    <div>
-      <Label className="text-xs font-medium text-gray-700">{label}</Label>
-      <div className="flex flex-wrap gap-1.5 mt-1.5">
-        {options.map(o => (
-          <label
-            key={o.val}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs cursor-pointer transition-colors ${
-              selected.includes(o.val)
-                ? "bg-gray-900 text-white border-gray-900"
-                : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-            }`}
-          >
-            <input
-              type="checkbox"
-              checked={selected.includes(o.val)}
-              onChange={() => onToggle(o.val)}
-              className="sr-only"
-            />
-            <span
-              className={`inline-block w-3 h-3 rounded-sm border ${
-                selected.includes(o.val) ? "bg-white border-white" : "bg-white border-gray-300"
-              } flex items-center justify-center`}
-            >
-              {selected.includes(o.val) && (
-                <span className="text-gray-900 text-[10px] leading-none">✓</span>
-              )}
-            </span>
-            {o.label}
-          </label>
-        ))}
-      </div>
-    </div>
+    <label
+      className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs cursor-pointer transition-colors ${
+        checked
+          ? "bg-gray-900 text-white border-gray-900"
+          : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="sr-only"
+      />
+      <span
+        className={`inline-block w-3 h-3 rounded-sm border ${
+          checked ? "bg-white border-white" : "bg-white border-gray-300"
+        } flex items-center justify-center`}
+      >
+        {checked && <span className="text-gray-900 text-[10px] leading-none">✓</span>}
+      </span>
+      {label}
+    </label>
   );
 }

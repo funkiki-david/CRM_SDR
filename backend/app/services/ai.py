@@ -139,6 +139,28 @@ Rules:
 - If the input has no useful signals, return {"suggestions": []}."""
 
 
+SYSTEM_PROMPT_SUGGEST_KEYWORDS = """You are a B2B sales prospecting expert helping an SDR refine an Apollo.io company search.
+
+Given the user's free-text description of the companies they want to find, generate keyword suggestions that would match real companies on Apollo's database.
+
+Return two categories:
+1. "industries" — Apollo-style industry category names (lowercase short phrases, e.g. "printing", "signage", "marketing services", "manufacturing")
+2. "keywords" — Specific keyword tags that match the descriptions and websites of target companies (title-case short phrases, e.g. "Digital Signage", "Vehicle Wraps", "Wide Format Printing", "LED Displays")
+
+Guidelines:
+- Aim for ~8-12 industries and ~20-30 keywords; together no fewer than 20 and no more than 40
+- Each item is 1-3 words, no punctuation, unique, directly relevant to the input
+- Prefer terms a company would actually use on its website / LinkedIn / Apollo tag list
+- No duplicates between the two arrays
+- If the input is too vague or non-business, return {"industries": [], "keywords": []}
+
+Respond ONLY with valid JSON in this exact shape — no markdown, no backticks, no preamble:
+{
+  "industries": ["printing", "signage", ...],
+  "keywords": ["Digital Signage", "Vehicle Wraps", ...]
+}"""
+
+
 class AIService:
     """All AI features powered by a single Anthropic API key"""
 

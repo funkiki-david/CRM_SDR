@@ -32,6 +32,7 @@ from app.services.ai import (
     SYSTEM_PROMPT_RESEARCH_COMPANY,
     SYSTEM_PROMPT_DRAFT_EMAIL,
     SYSTEM_PROMPT_SUGGEST_TODOS,
+    SYSTEM_PROMPT_SUGGEST_KEYWORDS,
 )
 from app.services.ai_budget import (
     call_ai_with_limit,
@@ -627,6 +628,102 @@ def _parse_suggestions_json(raw: str):
         # 单个建议对象，包装成数组
         return [data]
     return None
+
+
+class SuggestKeywordsBody(BaseModel):
+    input: str
+
+
+@router.post("/suggest-keywords")
+async def suggest_keywords(
+    body: SuggestKeywordsBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    AI Keyword Finder — Claude Haiku generates industries + keywords from a
+    free-text description for use as Apollo search filters.
+    Returns {"industries": [...], "keywords": [...]} — both empty on failure.
+    """
+    text = (body.input or "").strip()
+    if not text:
+        return {"industries": [], "keywords": []}
+    if len(text) > 300:
+        text = text[:300]
+
+    if not ai_service.claude_ready:
+        raise HTTPException(
+            status_code=503,
+            detail="AI keyword suggestion is unavailable. Please try again.",
+        )
+
+    prompt = f"""User input: {text}
+
+Generate the industries and keywords arrays per the schema. Respond with JSON only."""
+
+    try:
+        raw, _log = await call_ai_with_limit(
+            db=db,
+            user=current_user,
+            feature="suggest_keywords",
+            call_fn=lambda: ai_service._call_claude_raw(
+                prompt, 800, system=SYSTEM_PROMPT_SUGGEST_KEYWORDS,
+            ),
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        return {
+            "industries": [],
+            "keywords": [],
+            "message": "AI keyword suggestion is unavailable. Please try again.",
+        }
+
+    s = (raw or "").strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[1] if "\n" in s else s[3:]
+        if s.endswith("```"):
+            s = s[:-3]
+        s = s.strip()
+        if s.startswith("json\n") or s.startswith("json\r"):
+            s = s.split("\n", 1)[1]
+    first, last = s.find("{"), s.rfind("}")
+    if first != -1 and last > first:
+        s = s[first:last + 1]
+
+    try:
+        data = json.loads(s)
+    except json.JSONDecodeError:
+        return {
+            "industries": [],
+            "keywords": [],
+            "message": "AI returned unexpected format. Please try again.",
+        }
+
+    industries = data.get("industries") or []
+    keywords = data.get("keywords") or []
+    if not isinstance(industries, list):
+        industries = []
+    if not isinstance(keywords, list):
+        keywords = []
+
+    def _clean(items):
+        seen = set()
+        out = []
+        for it in items:
+            if not isinstance(it, str):
+                continue
+            v = it.strip()
+            if not v or v.lower() in seen:
+                continue
+            seen.add(v.lower())
+            out.append(v)
+        return out[:40]
+
+    return {
+        "industries": _clean(industries),
+        "keywords": _clean(keywords),
+    }
 
 
 # PAUSED: Smart Search — AI Search page removed from frontend

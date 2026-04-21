@@ -415,6 +415,16 @@ export const aiApi = {
   suggestTodos: (force = false) =>
     request(`/api/ai/suggest-todos${force ? "?force=true" : ""}`),
 
+  /**
+   * AI Keyword Finder — from a free-text description, returns
+   * { industries: string[], keywords: string[] } for Apollo search.
+   */
+  suggestKeywords: (input: string) =>
+    request("/api/ai/suggest-keywords", {
+      method: "POST",
+      body: JSON.stringify({ input }),
+    }),
+
   /** Current user's today AI spend + remaining limit */
   getUsage: () => request("/api/ai/usage"),
 
