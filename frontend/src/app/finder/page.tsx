@@ -3,12 +3,12 @@
  *
  *  Primary Search (主搜索区，白色，始终可见):
  *    - Company Name / Company Domain / Keywords / LinkedIn URL / Person Name
+ *    - State (多选) + City 与搜索按钮同行
  *    - 至少填一个才能搜
  *
  *  Refine Results (筛选项，灰色，默认折叠):
- *    - Location (多选 State + City)
  *    - Industry / Seniority / Company Size / Annual Revenue (全部 checkbox 多选)
- *    - 改动时自动重新搜索（首次 Search Prospects 之后）
+ *    - 改动时自动重新搜索（首次 Search 之后）
  */
 "use client";
 
@@ -112,10 +112,10 @@ export default function FinderPage() {
   const [keywords, setKeywords] = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [personName, setPersonName] = useState("");
-
-  // === Refine Filters ===
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [city, setCity] = useState("");
+
+  // === Refine Filters ===
   const [industry, setIndustry] = useState<string[]>([]);
   const [seniority, setSeniority] = useState<string[]>([]);
   const [employeeRange, setEmployeeRange] = useState<string[]>([]);
@@ -153,11 +153,12 @@ export default function FinderPage() {
   // === Primary Search 至少填一个 ===
   const hasPrimaryInput = Boolean(
     companyName.trim() || domain.trim() || keywords.trim() ||
-    linkedinUrl.trim() || personName.trim()
+    linkedinUrl.trim() || personName.trim() ||
+    selectedStates.length > 0 || city.trim()
   );
 
   // === 有任何筛选项被改 ===
-  const hasRefineFilters = selectedStates.length > 0 || city.trim() ||
+  const hasRefineFilters =
     industry.length > 0 || seniority.length > 0 ||
     employeeRange.length > 0 || revenueRange.length > 0;
 
@@ -212,7 +213,7 @@ export default function FinderPage() {
   // 用 ref 记录上一次 refine 状态，避免重复搜索
   const firstSearchDone = useRef(false);
   const refineKey = JSON.stringify({
-    selectedStates, city, industry, seniority, employeeRange, revenueRange,
+    industry, seniority, employeeRange, revenueRange,
   });
 
   useEffect(() => {
@@ -293,10 +294,10 @@ export default function FinderPage() {
 
   function clearAllPrimary() {
     setCompanyName(""); setDomain(""); setKeywords(""); setLinkedinUrl(""); setPersonName("");
+    setSelectedStates([]); setCity("");
   }
 
   function clearRefineFilters() {
-    setSelectedStates([]); setCity("");
     setIndustry([]); setSeniority([]); setEmployeeRange([]); setRevenueRange([]);
   }
 
@@ -347,13 +348,13 @@ export default function FinderPage() {
                 <p className="font-semibold text-gray-900">1. Start with a Search</p>
                 <p className="text-gray-600 mt-0.5 text-xs">
                   Enter at least one search term in the Primary Search area: company name,
-                  domain, keywords, LinkedIn URL, or person name.
+                  domain, keywords, LinkedIn URL, person name, State, or City.
                 </p>
               </li>
               <li>
                 <p className="font-semibold text-gray-900">2. Refine Your Results <span className="font-normal text-gray-400">(Optional)</span></p>
                 <p className="text-gray-600 mt-0.5 text-xs">
-                  Click &ldquo;Refine Results&rdquo; to narrow down by location, industry,
+                  Click &ldquo;Refine Results&rdquo; to narrow down by industry,
                   seniority, company size, or revenue range.
                 </p>
               </li>
@@ -389,7 +390,8 @@ export default function FinderPage() {
                 </p>
                 <p className="text-xs text-gray-500 mt-0.5">Fill at least one field below</p>
               </div>
-              {(companyName || domain || keywords || linkedinUrl || personName) && (
+              {(companyName || domain || keywords || linkedinUrl || personName ||
+                selectedStates.length > 0 || city) && (
                 <button
                   onClick={clearAllPrimary}
                   className="text-xs text-gray-400 hover:text-gray-600"
@@ -433,13 +435,44 @@ export default function FinderPage() {
               />
             </div>
 
-            <div className="flex justify-end mt-4 pt-3 border-t border-gray-100">
-              <Button
-                onClick={() => handleSearch(1)}
-                disabled={searching || !hasPrimaryInput}
-              >
-                {searching ? "Searching..." : "Search Prospects"}
-              </Button>
+            {/* === State + City + Search button (one row) === */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="grid grid-cols-[1fr_220px_auto] gap-3 items-end">
+                <div>
+                  <Label className="text-xs font-medium text-gray-700">State (multi-select)</Label>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-white border border-gray-200 rounded mt-1">
+                    {US_STATES.map(s => (
+                      <button
+                        key={s}
+                        onClick={() => toggleMulti(s, selectedStates, setSelectedStates)}
+                        className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors ${
+                          selectedStates.includes(s)
+                            ? "bg-gray-900 text-white border-gray-900"
+                            : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs font-medium text-gray-700">City (optional)</Label>
+                  <Input
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="e.g. Dallas"
+                    className="h-9 bg-white mt-1"
+                  />
+                </div>
+                <Button
+                  onClick={() => handleSearch(1)}
+                  disabled={searching || !hasPrimaryInput}
+                  className="h-9"
+                >
+                  {searching ? "Searching..." : "🔍 Search"}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -457,8 +490,8 @@ export default function FinderPage() {
               <span className="text-xs text-gray-400">(optional filters)</span>
               {hasRefineFilters && (
                 <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-blue-50 text-blue-700">
-                  {selectedStates.length + (city ? 1 : 0) + industry.length +
-                   seniority.length + employeeRange.length + revenueRange.length} active
+                  {industry.length + seniority.length +
+                   employeeRange.length + revenueRange.length} active
                 </Badge>
               )}
             </div>
@@ -478,41 +511,7 @@ export default function FinderPage() {
           </button>
 
           {refineOpen && (
-            <div className="px-5 pb-5 space-y-5">
-              {/* Location */}
-              <div>
-                <Label className="text-xs font-medium text-gray-700">Location</Label>
-                <div className="grid grid-cols-2 gap-3 mt-1.5">
-                  <div>
-                    <p className="text-[10px] text-gray-500 mb-1">State (multi-select)</p>
-                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1.5 bg-white border border-gray-200 rounded">
-                      {US_STATES.map(s => (
-                        <button
-                          key={s}
-                          onClick={() => toggleMulti(s, selectedStates, setSelectedStates)}
-                          className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors ${
-                            selectedStates.includes(s)
-                              ? "bg-gray-900 text-white border-gray-900"
-                              : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-                          }`}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500 mb-1">City (optional)</p>
-                    <Input
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="e.g. Dallas"
-                      className="h-9 bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
+            <div className="px-5 pb-5 space-y-5 pt-4">
               {/* Industry */}
               <FilterGroup
                 label="Industry"
