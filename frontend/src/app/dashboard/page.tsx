@@ -22,7 +22,6 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { dashboardApi, activitiesApi, aiApi, authApi } from "@/lib/api";
 import { useAIBudget } from "@/components/ai-budget";
-import { notifyEmailDisabled } from "@/lib/email-disabled";
 
 // ==================== Types ====================
 
@@ -449,7 +448,7 @@ function FollowUpCard({
           )}
           {fu.contact_email && (
             <button
-              onClick={notifyEmailDisabled}
+              onClick={() => onEmail(fu)}
               className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
             >
               📧 Email

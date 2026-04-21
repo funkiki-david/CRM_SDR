@@ -13,7 +13,6 @@ import EmailCompose from "@/components/email-compose";
 import AddContact from "@/components/add-contact";
 import ImportContacts from "@/components/import-contacts";
 import { useAIBudget, AIBudgetBadge, AILimitModal } from "@/components/ai-budget";
-import { notifyEmailDisabled } from "@/lib/email-disabled";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -471,7 +470,7 @@ function ContactsContent() {
                         </Button>
                       );
                     })()}
-                    <Button size="sm" variant="outline" onClick={notifyEmailDisabled}>
+                    <Button size="sm" variant="outline" onClick={() => setEmailComposeOpen(true)}>
                       Send Email
                     </Button>
                     <Button size="sm" onClick={() => setQuickEntryOpen(true)}>

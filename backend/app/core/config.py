@@ -59,6 +59,8 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        # ignore unknown env vars (e.g. EMAIL_1_* read by seed scripts)
+        extra = "ignore"
 
 
 # 全局配置实例 — 其他文件直接 import 使用

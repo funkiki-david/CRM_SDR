@@ -34,10 +34,20 @@ type Provider = "picker" | "gmail" | "outlook" | "smtp";
 
 // 常见邮箱的 SMTP 预设 —— 选完 Other SMTP 可以按邮箱域名自动填
 const SMTP_PRESETS: Record<string, Partial<SmtpForm>> = {
+  "gmail.com": { smtp_host: "smtp.gmail.com", smtp_port: 587, imap_host: "imap.gmail.com", imap_port: 993, smtp_encryption: "starttls" },
+  "googlemail.com": { smtp_host: "smtp.gmail.com", smtp_port: 587, imap_host: "imap.gmail.com", imap_port: 993, smtp_encryption: "starttls" },
+  "graphictac.biz": { smtp_host: "smtp.gmail.com", smtp_port: 587, imap_host: "imap.gmail.com", imap_port: 993, smtp_encryption: "starttls" },
   "hostinger.com": { smtp_host: "smtp.hostinger.com", smtp_port: 465, imap_host: "imap.hostinger.com", imap_port: 993, smtp_encryption: "ssl" },
   "amazonsolutions.us": { smtp_host: "smtp.hostinger.com", smtp_port: 465, imap_host: "imap.hostinger.com", imap_port: 993, smtp_encryption: "ssl" },
   "outlook.com": { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
   "office365.com": { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
+  "graphictac.us": { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
+};
+
+// 默认 SMTP 设置按上游 provider 填充（点 Gmail / Outlook 的 "Use SMTP Instead" 按钮时用）
+const PROVIDER_DEFAULTS: Record<"gmail" | "outlook", Partial<SmtpForm>> = {
+  gmail: { smtp_host: "smtp.gmail.com", smtp_port: 587, imap_host: "imap.gmail.com", imap_port: 993, smtp_encryption: "starttls" },
+  outlook: { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
 };
 
 interface SmtpForm {
@@ -263,7 +273,10 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
               >
                 Connect with Google
               </Button>
-              <Button variant="outline" onClick={() => setProvider("smtp")}>
+              <Button variant="outline" onClick={() => {
+                setForm(prev => ({ ...prev, ...PROVIDER_DEFAULTS.gmail }));
+                setProvider("smtp");
+              }}>
                 Use App Password (SMTP) Instead
               </Button>
             </div>
@@ -287,7 +300,10 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
                 (Users → Active users → select user → Mail → Manage email apps → Authenticated SMTP).
               </p>
             </div>
-            <Button variant="outline" onClick={() => setProvider("smtp")}>
+            <Button variant="outline" onClick={() => {
+              setForm(prev => ({ ...prev, ...PROVIDER_DEFAULTS.outlook }));
+              setProvider("smtp");
+            }}>
               Use SMTP Instead
             </Button>
           </div>
