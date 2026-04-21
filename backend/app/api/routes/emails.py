@@ -64,10 +64,13 @@ async def list_email_accounts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List connected email accounts for the current user"""
-    result = await db.execute(
-        select(EmailAccount).where(EmailAccount.user_id == current_user.id)
-    )
+    """
+    List all email accounts. Team-shared access: every user (Admin / Manager
+    / SDR) sees every configured sending address. user_id on the row marks
+    who first added it, not a read gate.
+    """
+    _ = current_user  # reserved for future per-role filtering
+    result = await db.execute(select(EmailAccount))
     return result.scalars().all()
 
 
@@ -195,7 +198,8 @@ async def send_email(
     email_account = None
     if data.email_account_id:
         email_account = await db.get(EmailAccount, data.email_account_id)
-        if email_account is None or email_account.user_id != current_user.id:
+        # Team-shared: any logged-in user can send through any configured account.
+        if email_account is None:
             raise HTTPException(status_code=404, detail="Email account not found")
 
     subject = _fill_template(data.subject, contact, current_user.full_name)
