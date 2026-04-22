@@ -62,6 +62,37 @@ async def init_db():
             """,
             # 如果连 office_phone 也不存在（新环境），补上
             "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS office_phone VARCHAR(50)",
+            # Emails page: extend sent_emails to also hold received messages
+            "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS direction VARCHAR(20) NOT NULL DEFAULT 'sent'",
+            "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS from_email VARCHAR(255)",
+            "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS body_html TEXT",
+            "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS message_id VARCHAR(500)",
+            "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS in_reply_to VARCHAR(500)",
+            "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ",
+            "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE",
+            # contact_id used to be NOT NULL — relax for received rows without a matched contact
+            """
+            DO $$
+            BEGIN
+              IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='sent_emails'
+                  AND column_name='contact_id' AND is_nullable='NO'
+              ) THEN
+                ALTER TABLE sent_emails ALTER COLUMN contact_id DROP NOT NULL;
+              END IF;
+            END $$
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_sent_emails_direction ON sent_emails(direction)",
+            "CREATE INDEX IF NOT EXISTS ix_sent_emails_message_id ON sent_emails(message_id)",
+            "CREATE INDEX IF NOT EXISTS ix_sent_emails_from_email ON sent_emails(from_email)",
+            # Backfill from_email on existing rows using the linked email_account
+            """
+            UPDATE sent_emails se
+            SET from_email = ea.email_address
+            FROM email_accounts ea
+            WHERE se.email_account_id = ea.id AND se.from_email IS NULL
+            """,
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

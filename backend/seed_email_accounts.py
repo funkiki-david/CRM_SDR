@@ -31,11 +31,20 @@ def _load_account_from_env(prefix: str) -> dict | None:
     address = os.getenv(f"EMAIL_{prefix}_ADDRESS")
     if not address:
         return None
+    smtp_host = (os.getenv(f"EMAIL_{prefix}_SMTP_HOST") or "").strip()
+    # Default IMAP host per known provider when not set explicitly
+    imap_default = {
+        "smtp.gmail.com": ("imap.gmail.com", 993),
+        "smtp.office365.com": ("outlook.office365.com", 993),
+        "smtp.hostinger.com": ("imap.hostinger.com", 993),
+    }.get(smtp_host, ("", 993))
     return {
         "address": address.strip(),
         "display_name": (os.getenv(f"EMAIL_{prefix}_DISPLAY_NAME") or "").strip() or None,
-        "smtp_host": (os.getenv(f"EMAIL_{prefix}_SMTP_HOST") or "").strip(),
+        "smtp_host": smtp_host,
         "smtp_port": int(os.getenv(f"EMAIL_{prefix}_SMTP_PORT") or "587"),
+        "imap_host": (os.getenv(f"EMAIL_{prefix}_IMAP_HOST") or imap_default[0]).strip() or None,
+        "imap_port": int(os.getenv(f"EMAIL_{prefix}_IMAP_PORT") or str(imap_default[1])),
         "smtp_username": (os.getenv(f"EMAIL_{prefix}_SMTP_USERNAME") or address).strip(),
         "smtp_password": os.getenv(f"EMAIL_{prefix}_SMTP_PASSWORD") or "",
         "smtp_encryption": (os.getenv(f"EMAIL_{prefix}_SMTP_ENCRYPTION") or "starttls").strip(),
@@ -95,6 +104,8 @@ async def seed() -> None:
                     is_active=True,
                     smtp_host=data["smtp_host"],
                     smtp_port=data["smtp_port"],
+                    imap_host=data["imap_host"],
+                    imap_port=data["imap_port"],
                     smtp_username=data["smtp_username"],
                     smtp_password_encrypted=encrypted_pw,
                     smtp_encryption=data["smtp_encryption"],
@@ -110,6 +121,8 @@ async def seed() -> None:
                 existing.is_active = True
                 existing.smtp_host = data["smtp_host"]
                 existing.smtp_port = data["smtp_port"]
+                existing.imap_host = data["imap_host"]
+                existing.imap_port = data["imap_port"]
                 existing.smtp_username = data["smtp_username"]
                 existing.smtp_password_encrypted = encrypted_pw
                 existing.smtp_encryption = data["smtp_encryption"]

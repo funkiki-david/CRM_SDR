@@ -289,6 +289,30 @@ export const emailsApi = {
       body: JSON.stringify(data),
     }),
 
+  /** Unified inbox/sent list for the Emails page */
+  listMessages: (params: {
+    direction?: "all" | "sent" | "received";
+    contact_id?: number;
+    search?: string;
+    skip?: number;
+    limit?: number;
+  } = {}) => {
+    const q = new URLSearchParams();
+    if (params.direction) q.set("direction", params.direction);
+    if (params.contact_id) q.set("contact_id", String(params.contact_id));
+    if (params.search) q.set("search", params.search);
+    if (params.skip != null) q.set("skip", String(params.skip));
+    if (params.limit != null) q.set("limit", String(params.limit));
+    return request(`/api/emails?${q.toString()}`);
+  },
+
+  /** Full content of a single email message */
+  getMessage: (id: number) => request(`/api/emails/${id}`),
+
+  /** Pull new messages from all active IMAP-configured accounts */
+  syncInbox: () =>
+    request("/api/emails/sync", { method: "POST" }),
+
   /** Preview a template with contact data filled in */
   preview: (contactId: number, templateId: number) =>
     request("/api/emails/preview", {

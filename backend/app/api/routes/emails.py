@@ -4,11 +4,11 @@ Handles template variable substitution and Gmail API sending.
 When Gmail OAuth is not configured, emails are saved as drafts.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -33,6 +33,10 @@ from app.services.gmail_oauth import (
     refresh_if_needed as gmail_refresh_if_needed,
     send_via_gmail,
     GmailOAuthError,
+)
+from app.services.email_receiver import (
+    fetch_new_emails,
+    IMAPError,
 )
 
 router = APIRouter(prefix="/api/emails", tags=["Emails"])
@@ -282,7 +286,9 @@ async def send_email(
         )
 
     sent_email = SentEmail(
+        direction="sent",
         contact_id=contact.id,
+        from_email=email_account.email_address if email_account else None,
         to_email=contact.email,
         user_id=current_user.id,
         email_account_id=data.email_account_id,
@@ -291,6 +297,7 @@ async def send_email(
         template_id=data.template_id,
         status=email_status,
         gmail_message_id=gmail_message_id,
+        message_id=gmail_message_id,  # use SMTP response as best-effort thread key
         sent_at=sent_at,
     )
     db.add(sent_email)
@@ -315,11 +322,244 @@ async def list_sent_emails(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List sent emails, optionally filtered by contact"""
-    query = select(SentEmail).where(SentEmail.user_id == current_user.id)
+    """Legacy endpoint — kept for backward compat. Use GET /api/emails instead."""
+    _ = current_user
+    query = select(SentEmail).where(SentEmail.direction == "sent")
     if contact_id:
         query = query.where(SentEmail.contact_id == contact_id)
     query = query.order_by(SentEmail.created_at.desc()).limit(limit)
 
     result = await db.execute(query)
     return result.scalars().all()
+
+
+# === Unified inbox/sent list (used by the /emails page) ===
+
+@router.get("")
+async def list_messages(
+    direction: str = Query("all", pattern="^(all|sent|received)$"),
+    contact_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Unified message list for the Emails page — team-shared visibility.
+    Returns {messages: [...], total: N, counts: {sent, received, all}}.
+    """
+    _ = current_user
+    base = select(SentEmail)
+    if direction != "all":
+        base = base.where(SentEmail.direction == direction)
+    if contact_id:
+        base = base.where(SentEmail.contact_id == contact_id)
+    if search:
+        term = f"%{search}%"
+        base = base.where(
+            or_(
+                SentEmail.subject.ilike(term),
+                SentEmail.from_email.ilike(term),
+                SentEmail.to_email.ilike(term),
+            )
+        )
+
+    total_res = await db.execute(select(func.count()).select_from(base.subquery()))
+    total = total_res.scalar_one()
+
+    # Sort: received_at or sent_at, falling back to created_at
+    order_col = func.coalesce(SentEmail.received_at, SentEmail.sent_at, SentEmail.created_at)
+    page_q = base.order_by(order_col.desc()).offset(skip).limit(limit)
+    rows = (await db.execute(page_q)).scalars().all()
+
+    # Separate counts across all three tabs (unfiltered by direction)
+    count_q = select(SentEmail.direction, func.count()).group_by(SentEmail.direction)
+    count_rows = (await db.execute(count_q)).all()
+    counts = {"sent": 0, "received": 0, "all": 0}
+    for dir_name, n in count_rows:
+        counts[dir_name] = int(n)
+        counts["all"] += int(n)
+
+    def _serialize(m: SentEmail) -> dict:
+        return {
+            "id": m.id,
+            "direction": m.direction,
+            "subject": m.subject,
+            "from_email": m.from_email,
+            "to_email": m.to_email,
+            "contact_id": m.contact_id,
+            "email_account_id": m.email_account_id,
+            "status": m.status.value if hasattr(m.status, "value") else m.status,
+            "is_read": bool(m.is_read),
+            "sent_at": m.sent_at.isoformat() if m.sent_at else None,
+            "received_at": m.received_at.isoformat() if m.received_at else None,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "snippet": (m.body or "")[:200],
+        }
+
+    return {"messages": [_serialize(m) for m in rows], "total": total, "counts": counts}
+
+
+@router.get("/{message_id}")
+async def get_message(
+    message_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a single email message with full body."""
+    _ = current_user
+    m = await db.get(SentEmail, message_id)
+    if m is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    # Mark received rows as read on first open
+    if m.direction == "received" and not m.is_read:
+        m.is_read = True
+        await db.flush()
+    return {
+        "id": m.id,
+        "direction": m.direction,
+        "subject": m.subject,
+        "from_email": m.from_email,
+        "to_email": m.to_email,
+        "contact_id": m.contact_id,
+        "email_account_id": m.email_account_id,
+        "status": m.status.value if hasattr(m.status, "value") else m.status,
+        "is_read": bool(m.is_read),
+        "sent_at": m.sent_at.isoformat() if m.sent_at else None,
+        "received_at": m.received_at.isoformat() if m.received_at else None,
+        "created_at": m.created_at.isoformat() if m.created_at else None,
+        "body": m.body or "",
+        "body_html": m.body_html or "",
+        "message_id": m.message_id,
+        "in_reply_to": m.in_reply_to,
+    }
+
+
+# === IMAP Sync ===
+
+@router.post("/sync")
+async def sync_inbox(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Pull recent inbox messages from every configured account with IMAP creds.
+    Dedupes by message_id. Auto-links to a contact when from_email matches a
+    known contact's email. Creates an Activity row for the timeline.
+    """
+    accounts_res = await db.execute(
+        select(EmailAccount).where(
+            EmailAccount.is_active.is_(True),
+            EmailAccount.imap_host.isnot(None),
+            EmailAccount.smtp_password_encrypted.isnot(None),
+        )
+    )
+    accounts = accounts_res.scalars().all()
+
+    total_new = 0
+    total_skipped = 0
+    per_account: list[dict] = []
+
+    for acc in accounts:
+        try:
+            password = decrypt_password(acc.smtp_password_encrypted)
+        except Exception as e:
+            per_account.append({
+                "account": acc.email_address,
+                "error": f"decrypt failed: {e}",
+            })
+            continue
+
+        username = acc.smtp_username or acc.email_address
+        # Fetch last 30 days — IMAP date format: "DD-Mon-YYYY"
+        since = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%d-%b-%Y")
+        try:
+            fetched = await fetch_new_emails(
+                imap_host=acc.imap_host,
+                imap_port=acc.imap_port or 993,
+                username=username,
+                password=password,
+                since_date=since,
+                max_messages=50,
+            )
+        except IMAPError as e:
+            per_account.append({"account": acc.email_address, "error": str(e)})
+            continue
+
+        new_count = 0
+        skipped_count = 0
+        for msg in fetched:
+            mid = msg.get("message_id")
+            if mid:
+                exists_q = await db.execute(
+                    select(SentEmail.id).where(SentEmail.message_id == mid).limit(1)
+                )
+                if exists_q.scalar_one_or_none() is not None:
+                    skipped_count += 1
+                    continue
+
+            from_addr = (msg.get("from") or "").lower()
+
+            # Try link to contact by from_email
+            linked_contact_id: Optional[int] = None
+            if from_addr:
+                c_q = await db.execute(
+                    select(Contact.id).where(func.lower(Contact.email) == from_addr).limit(1)
+                )
+                linked_contact_id = c_q.scalar_one_or_none()
+
+            # Fallback: if in_reply_to matches a previously-sent message,
+            # use that thread's contact
+            if linked_contact_id is None and msg.get("in_reply_to"):
+                thread_q = await db.execute(
+                    select(SentEmail.contact_id)
+                    .where(SentEmail.message_id == msg["in_reply_to"])
+                    .limit(1)
+                )
+                linked_contact_id = thread_q.scalar_one_or_none()
+
+            row = SentEmail(
+                direction="received",
+                contact_id=linked_contact_id,
+                from_email=from_addr or None,
+                to_email=(msg.get("to") or acc.email_address),
+                user_id=acc.user_id,
+                email_account_id=acc.id,
+                subject=(msg.get("subject") or "(no subject)")[:500],
+                body=msg.get("body_plain") or "",
+                body_html=msg.get("body_html") or None,
+                status=EmailStatus.SENT,  # direction='received' is the real source of truth
+                message_id=mid,
+                in_reply_to=msg.get("in_reply_to"),
+                received_at=msg.get("received_at") or datetime.now(timezone.utc),
+                is_read=False,
+            )
+            db.add(row)
+            new_count += 1
+
+            # Timeline entry — only when linked to a contact
+            if linked_contact_id:
+                db.add(Activity(
+                    activity_type=ActivityType.EMAIL,
+                    subject=f"Received: {row.subject}",
+                    content=row.body[:2000],
+                    contact_id=linked_contact_id,
+                    user_id=acc.user_id,
+                ))
+
+        await db.flush()
+        total_new += new_count
+        total_skipped += skipped_count
+        per_account.append({
+            "account": acc.email_address,
+            "new_emails": new_count,
+            "skipped": skipped_count,
+        })
+
+    return {
+        "new_emails": total_new,
+        "skipped": total_skipped,
+        "per_account": per_account,
+        "user": current_user.email,
+    }

@@ -26,6 +26,10 @@ interface EmailComposeProps {
   contactId: number;
   contactName: string;
   contactEmail: string | null;
+  /** Pre-populate subject (e.g. "Re: ..." when replying) */
+  initialSubject?: string;
+  /** Pre-populate body (e.g. quoted original when replying) */
+  initialBody?: string;
   onSuccess?: () => void;
 }
 
@@ -58,6 +62,8 @@ export default function EmailCompose({
   contactId,
   contactName,
   contactEmail,
+  initialSubject,
+  initialBody,
   onSuccess,
 }: EmailComposeProps) {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -76,8 +82,8 @@ export default function EmailCompose({
   // Load templates and accounts when dialog opens
   useEffect(() => {
     if (!open) return;
-    setSubject("");
-    setBody("");
+    setSubject(initialSubject || "");
+    setBody(initialBody || "");
     setSelectedTemplateId(null);
     setError("");
     setSuccess(false);
@@ -98,6 +104,7 @@ export default function EmailCompose({
       const preferred = lastId && active.find(a => a.id === lastId);
       setSelectedAccountId(preferred ? preferred.id : active[0].id);
     }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // 选择变化时持久化

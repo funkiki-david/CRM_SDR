@@ -30,6 +30,7 @@ const roleLabels: Record<string, string> = {
 const navLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/contacts", label: "Contacts" },
+  { href: "/emails", label: "Emails" },
   { href: "/finder", label: "Finder" },
   { href: "/settings", label: "Settings" },
 ];
