@@ -114,8 +114,10 @@ function dateGroupLabel(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// Monochrome unicode (not emoji) so CSS color (text-slate-400) actually applies.
+// Emoji glyphs are rendered in their native color by the OS regardless of CSS.
 const ACTIVITY_ICON: Record<string, string> = {
-  call: "📞", email: "📧", linkedin: "🔗", meeting: "🤝", note: "📝",
+  call: "☎", email: "✉", linkedin: "in", meeting: "◆", note: "✎",
 };
 
 const ACTIVITY_VERB: Record<string, string> = {
@@ -167,9 +169,9 @@ export default function DashboardPage() {
         {/* === Welcome header === */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
+            <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
             {currentUserName && (
-              <p className="text-sm text-gray-500 mt-0.5">Welcome back, {currentUserName.split(" ")[0]}</p>
+              <p className="text-sm text-slate-500 mt-0.5">Welcome back, {currentUserName.split(" ")[0]}</p>
             )}
           </div>
           <div className="flex gap-2">
@@ -228,12 +230,12 @@ export default function DashboardPage() {
 
 function StatCard({ icon, label, value }: { icon: string; label: string; value: number | string }) {
   return (
-    <div className="p-4 bg-white rounded-lg border border-gray-200">
-      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5">
+    <div className="p-5 bg-white rounded-lg shadow-sm border border-slate-100">
+      <div className="flex items-center gap-2 text-sm text-slate-500 mb-1.5">
         <span className="text-base">{icon}</span>
         <span>{label}</span>
       </div>
-      <p className="text-2xl font-semibold text-gray-900">{value}</p>
+      <p className="text-3xl font-bold text-slate-900">{value}</p>
     </div>
   );
 }
@@ -245,32 +247,29 @@ function AIBudgetStatCard() {
   }
   if (usage.unlimited) {
     return (
-      <div className="p-4 bg-white rounded-lg border border-gray-200">
-        <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5">
+      <div className="p-5 bg-white rounded-lg shadow-sm border border-slate-100">
+        <div className="flex items-center gap-2 text-sm text-slate-500 mb-1.5">
           <span className="text-base">🤖</span>
           <span>AI Budget</span>
         </div>
-        <p className="text-lg font-semibold text-gray-900">Unlimited</p>
-        <p className="text-[10px] text-gray-400 mt-0.5">${usage.spent_today.toFixed(2)} today</p>
+        <p className="text-2xl font-bold text-slate-900">Unlimited</p>
+        <p className="text-xs text-slate-400 mt-0.5">${usage.spent_today.toFixed(2)} today</p>
       </div>
     );
   }
-  const colorMap: Record<string, string> = {
-    green: "text-green-600",
-    yellow: "text-yellow-700",
-    red: "text-red-700",
-  };
+  // At-limit states use red (warning color); otherwise pure slate per design.
+  const amountClass = usage.at_limit ? "text-red-500" : "text-slate-900";
   return (
-    <div className="p-4 bg-white rounded-lg border border-gray-200">
-      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1.5">
+    <div className="p-5 bg-white rounded-lg shadow-sm border border-slate-100">
+      <div className="flex items-center gap-2 text-sm text-slate-500 mb-1.5">
         <span className="text-base">🤖</span>
         <span>AI Budget</span>
       </div>
-      <p className={`text-lg font-semibold ${colorMap[usage.color] || ""}`}>
+      <p className={`text-2xl font-bold ${amountClass}`}>
         ${usage.spent_today.toFixed(2)}
-        <span className="text-gray-400 text-sm font-normal"> / ${(usage.daily_limit ?? 0).toFixed(2)}</span>
+        <span className="text-slate-400 text-base font-normal"> / ${(usage.daily_limit ?? 0).toFixed(2)}</span>
       </p>
-      <p className="text-[10px] text-gray-400 mt-0.5">today</p>
+      <p className="text-xs text-slate-400 mt-0.5">today</p>
     </div>
   );
 }
@@ -291,8 +290,8 @@ function QuickStatsRow({ stats }: { stats: QuickStats | null }) {
 
 const URGENCY_STYLES: Record<string, { border: string; dot: string; label: string }> = {
   overdue: { border: "border-l-red-500", dot: "🔴", label: "Overdue" },
-  today: { border: "border-l-amber-500", dot: "🟡", label: "Due Today" },
-  upcoming: { border: "border-l-blue-500", dot: "🔵", label: "Upcoming This Week" },
+  today: { border: "border-l-slate-300", dot: "🟡", label: "Due Today" },
+  upcoming: { border: "border-l-slate-300", dot: "🔵", label: "Upcoming This Week" },
 };
 
 function FollowUpsSection({
@@ -307,7 +306,7 @@ function FollowUpsSection({
 
   if (loading) {
     return (
-      <Card><CardContent className="py-6 text-sm text-gray-400">Loading follow-ups…</CardContent></Card>
+      <Card><CardContent className="py-6 text-sm text-slate-400">Loading follow-ups…</CardContent></Card>
     );
   }
 
@@ -315,7 +314,7 @@ function FollowUpsSection({
   if (total === 0) {
     return (
       <Card>
-        <CardContent className="py-8 text-center text-gray-400 text-sm">
+        <CardContent className="py-8 text-center text-slate-400 text-sm">
           No follow-ups scheduled. Log an activity with a follow-up date to see it here.
         </CardContent>
       </Card>
@@ -331,8 +330,8 @@ function FollowUpsSection({
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
-        <h2 className="text-lg font-semibold text-gray-900">Follow-Ups Needed</h2>
-        <Badge variant="outline" className="text-xs">{total}</Badge>
+        <h2 className="text-lg font-semibold text-slate-900">Follow-Ups Needed</h2>
+        <span className="bg-slate-100 text-slate-700 rounded-full px-2 text-sm font-semibold">{total}</span>
       </div>
 
       <div className="space-y-5">
@@ -344,14 +343,14 @@ function FollowUpsSection({
           return (
             <div key={key}>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-slate-700">
                   <span className="mr-1">{style.dot}</span>
-                  {style.label} <span className="text-gray-400">({items.length})</span>
+                  {style.label} <span className="text-slate-400">({items.length})</span>
                 </p>
                 {items.length > 3 && (
                   <button
                     onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
-                    className="text-xs text-blue-600 hover:underline"
+                    className="text-xs text-slate-600 hover:text-slate-900 hover:underline"
                   >
                     {isExpanded ? "Show Less" : `View All (${items.length})`}
                   </button>
@@ -418,30 +417,31 @@ function FollowUpCard({
 
   const noteLine = fu.last_activity_content || fu.last_activity_summary || fu.follow_up_reason;
 
+  const actionBtn = "text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border border-slate-200 rounded hover:bg-slate-100 transition-colors";
   return (
-    <Card className={`border-l-4 ${borderClass} hover:shadow-sm transition-shadow`}>
+    <Card className={`border border-slate-200 border-l-4 ${borderClass} hover:shadow-sm transition-shadow`}>
       <CardContent className="py-3 px-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <Link
               href={`/contacts?id=${fu.contact_id}`}
-              className="font-medium text-sm text-gray-900 hover:underline"
+              className="font-medium text-sm text-slate-900 hover:underline"
             >
               {fu.contact_name}
             </Link>
-            {fu.company && <span className="text-sm text-gray-500 ml-1">· {fu.company}</span>}
-            <p className="text-xs text-gray-500 mt-0.5">{lastContactLine}</p>
+            {fu.company && <span className="text-sm text-slate-500 ml-1">· {fu.company}</span>}
+            <p className="text-xs text-slate-500 mt-0.5">{lastContactLine}</p>
             {noteLine && (
-              <p className="text-xs text-gray-600 mt-1 italic line-clamp-2">&ldquo;{noteLine}&rdquo;</p>
+              <p className="text-xs text-slate-600 mt-1 italic line-clamp-2">&ldquo;{noteLine}&rdquo;</p>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-100">
           {fu.contact_phone && (
             <a
               href={`tel:${fu.contact_phone}`}
-              className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+              className={actionBtn}
             >
               📞 Call
             </a>
@@ -449,7 +449,7 @@ function FollowUpCard({
           {fu.contact_email && (
             <button
               onClick={() => onEmail(fu)}
-              className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+              className={actionBtn}
             >
               📧 Email
             </button>
@@ -458,22 +458,22 @@ function FollowUpCard({
             <button
               onClick={() => setSnoozeMenu(v => !v)}
               disabled={busy}
-              className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+              className={actionBtn}
             >
               ⏰ Snooze
             </button>
             {snoozeMenu && (
-              <div className="absolute top-full left-0 mt-1 bg-white border rounded shadow-lg z-10 text-[11px] min-w-[120px]">
-                <button onClick={() => handleSnooze(1)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50">+ 1 day</button>
-                <button onClick={() => handleSnooze(3)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50">+ 3 days</button>
-                <button onClick={() => handleSnooze(7)} className="block w-full text-left px-3 py-1.5 hover:bg-gray-50">+ 1 week</button>
+              <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded shadow-lg z-10 text-[11px] min-w-[120px]">
+                <button onClick={() => handleSnooze(1)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 day</button>
+                <button onClick={() => handleSnooze(3)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 3 days</button>
+                <button onClick={() => handleSnooze(7)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 week</button>
               </div>
             )}
           </div>
           <button
             onClick={handleDone}
             disabled={busy}
-            className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-green-50 hover:text-green-700 ml-auto"
+            className={`${actionBtn} ml-auto`}
           >
             ✓ Done
           </button>
@@ -566,16 +566,16 @@ function ActivityFeedSection() {
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-900">Activity Feed</h2>
-        <Badge variant="outline" className="text-xs">{total}</Badge>
+        <h2 className="text-lg font-semibold text-slate-900">Activity Feed</h2>
+        <span className="bg-slate-100 text-slate-700 rounded-full px-2 text-sm font-semibold">{total}</span>
       </div>
 
       {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-2 mb-3 p-2 bg-gray-50 rounded border border-gray-200">
+      <div className="flex flex-wrap items-center gap-2 mb-3 p-2 bg-slate-50 rounded border border-slate-200">
         <select
           value={filterType}
           onChange={(e) => { setFilterType(e.target.value); setPage(1); }}
-          className="h-8 text-xs px-2 rounded border border-gray-200 bg-white"
+          className="h-8 text-xs px-2 rounded border border-slate-200 bg-white text-slate-700"
         >
           <option value="all">All Types</option>
           <option value="call">Calls</option>
@@ -587,7 +587,7 @@ function ActivityFeedSection() {
         <select
           value={timeRange}
           onChange={(e) => { setTimeRange(e.target.value); setPage(1); }}
-          className="h-8 text-xs px-2 rounded border border-gray-200 bg-white"
+          className="h-8 text-xs px-2 rounded border border-slate-200 bg-white text-slate-700"
         >
           <option value="all">All Time</option>
           <option value="today">Today</option>
@@ -603,9 +603,9 @@ function ActivityFeedSection() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-400 py-3">Loading…</p>
+        <p className="text-sm text-slate-400 py-3">Loading…</p>
       ) : items.length === 0 ? (
-        <Card><CardContent className="py-6 text-center text-sm text-gray-400">No activities match your filters.</CardContent></Card>
+        <Card><CardContent className="py-6 text-center text-sm text-slate-400">No activities match your filters.</CardContent></Card>
       ) : (
         <div className="space-y-4">
           {groups.map(([label, rows]) => {
@@ -614,14 +614,14 @@ function ActivityFeedSection() {
               <div key={label}>
                 <button
                   onClick={() => toggleGroup(label)}
-                  className="flex items-center gap-2 text-xs font-medium text-gray-600 mb-1.5 hover:text-gray-900"
+                  className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-500 mb-1.5 hover:text-slate-700"
                 >
                   <span>{isHidden ? "▶" : "▼"}</span>
                   <span>{label}</span>
-                  <span className="text-gray-400">({rows.length})</span>
+                  <span className="text-slate-400 normal-case font-normal">({rows.length})</span>
                 </button>
                 {!isHidden && (
-                  <div className="space-y-1 pl-1 border-l border-gray-100">
+                  <div className="space-y-1 pl-1 border-l border-slate-100">
                     {rows.map(a => <ActivityRow key={a.id} activity={a} />)}
                   </div>
                 )}
@@ -633,7 +633,7 @@ function ActivityFeedSection() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
+        <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500">
           <span>Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, total)} of {total}</span>
           <div className="flex items-center gap-2">
             <Button
@@ -666,21 +666,21 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
   const icon = ACTIVITY_ICON[activity.activity_type] || "📋";
   const verb = ACTIVITY_VERB[activity.activity_type] || "Interacted with";
   return (
-    <div className="pl-3 py-1.5 flex items-start gap-2 text-sm hover:bg-gray-50 rounded">
-      <span className="text-xs text-gray-400 shrink-0 w-16 mt-0.5">{formatTime(activity.created_at)}</span>
-      <span className="shrink-0 mt-0.5">{icon}</span>
+    <div className="pl-3 py-1.5 flex items-start gap-2 text-sm hover:bg-slate-50 rounded">
+      <span className="text-xs text-slate-400 shrink-0 w-16 mt-0.5">{formatTime(activity.created_at)}</span>
+      <span className="shrink-0 mt-0.5 text-slate-400">{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-xs">
-          <span className="text-gray-700">{activity.user_name}</span>
-          <span className="text-gray-400"> · </span>
+        <p className="text-xs text-slate-600">
+          <span className="font-medium text-slate-800">{activity.user_name}</span>
+          <span className="text-slate-400"> · </span>
           <span>{verb}{" "}
-            <Link href={`/contacts?id=${activity.contact_id}`} className="text-gray-900 hover:underline">
+            <Link href={`/contacts?id=${activity.contact_id}`} className="text-slate-900 hover:underline">
               {activity.contact_name}
             </Link>
           </span>
         </p>
         {activity.subject && (
-          <p className="text-xs text-gray-500 truncate mt-0.5">{activity.subject}</p>
+          <p className="text-xs text-slate-500 truncate mt-0.5">{activity.subject}</p>
         )}
       </div>
     </div>
@@ -690,9 +690,10 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
 // ==================== AI Suggested To-Do ====================
 
 const PRIORITY_STYLES: Record<string, { icon: string; label: string; color: string }> = {
-  HIGH: { icon: "🔥", label: "HIGH PRIORITY", color: "bg-red-50 text-red-700 border-red-200" },
-  OPPORTUNITY: { icon: "💡", label: "OPPORTUNITY", color: "bg-amber-50 text-amber-700 border-amber-200" },
-  INSIGHT: { icon: "📊", label: "INSIGHT", color: "bg-blue-50 text-blue-700 border-blue-200" },
+  // Red stays for HIGH but muted — bg-red-50 + text-red-700 per spec.
+  HIGH: { icon: "🔥", label: "HIGH PRIORITY", color: "bg-red-50 text-red-700 border border-red-200 rounded-full px-2 text-xs" },
+  OPPORTUNITY: { icon: "💡", label: "OPPORTUNITY", color: "bg-slate-50 text-slate-700 border border-slate-200 rounded-full px-2 text-xs" },
+  INSIGHT: { icon: "📊", label: "INSIGHT", color: "bg-slate-50 text-slate-700 border border-slate-200 rounded-full px-2 text-xs" },
 };
 
 function AISuggestionsSection() {
@@ -741,31 +742,30 @@ function AISuggestionsSection() {
   return (
     <section>
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-lg font-semibold text-gray-900">🤖 AI Suggested To-Do</h2>
+        <h2 className="text-lg font-semibold text-slate-900">🤖 AI Suggested To-Do</h2>
         <Button
           size="sm"
-          variant="outline"
           onClick={() => load(true)}
           disabled={loading}
-          className="text-xs h-7"
+          className="text-xs h-7 bg-blue-600 hover:bg-blue-700 text-white"
         >
           {loading ? "Generating..." : "Generate"}
         </Button>
       </div>
-      <p className="text-xs text-gray-500 mb-3">
+      <p className="text-xs text-slate-500 mb-3">
         Based on team's last 30 days of activity
         {generatedAt && !loading && (
-          <span className="ml-2 text-gray-400">· Last updated: {timeAgo(generatedAt)}</span>
+          <span className="ml-2 text-slate-400">· Last updated: {timeAgo(generatedAt)}</span>
         )}
       </p>
 
       {loading ? (
-        <Card><CardContent className="py-6 text-sm text-gray-400">Analyzing your activity…</CardContent></Card>
+        <Card><CardContent className="py-6 text-sm text-slate-400">Analyzing your activity…</CardContent></Card>
       ) : error ? (
-        <Card><CardContent className="py-4 text-sm text-red-600">{error}</CardContent></Card>
+        <Card><CardContent className="py-4 text-sm text-red-500">{error}</CardContent></Card>
       ) : visible.length === 0 ? (
         <Card>
-          <CardContent className="py-6 text-center text-sm text-gray-400">
+          <CardContent className="py-6 text-center text-sm text-slate-400">
             {suggestions.length > 0
               ? "All suggestions dismissed. Click Generate for new ones."
               : message
@@ -778,30 +778,30 @@ function AISuggestionsSection() {
           {visible.map((s, i) => {
             const style = PRIORITY_STYLES[s.priority] || PRIORITY_STYLES.INSIGHT;
             return (
-              <Card key={i} className="border-gray-200">
+              <Card key={i} className="border border-slate-200">
                 <CardContent className="py-3 px-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className={`text-[10px] py-0 px-1.5 ${style.color}`}>
+                    <span className={`inline-flex items-center py-0 font-medium ${style.color}`}>
                       {style.icon} {i + 1}. {style.label}
-                    </Badge>
+                    </span>
                   </div>
-                  <p className="text-sm font-medium text-gray-900 mb-1.5">{s.title}</p>
-                  <p className="text-xs text-gray-600 mb-1.5">
+                  <p className="text-sm font-medium text-slate-900 mb-1.5">{s.title}</p>
+                  <p className="text-xs text-slate-600 mb-1.5">
                     <span className="font-medium">Reason:</span> {s.reason}
                   </p>
-                  <p className="text-xs text-gray-700 mb-2">
+                  <p className="text-xs text-slate-700 mb-2">
                     <span className="font-medium">Suggested action:</span> {s.action}
                   </p>
-                  <div className="flex gap-1.5 pt-2 border-t border-gray-100">
+                  <div className="flex gap-1.5 pt-2 border-t border-slate-100">
                     <button
                       onClick={() => alert("Create Task feature coming soon — for now, log the activity manually.")}
-                      className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50"
+                      className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border border-slate-200 rounded hover:bg-slate-100 transition-colors"
                     >
                       + Create Task
                     </button>
                     <button
                       onClick={() => dismiss(s.title)}
-                      className="text-[11px] px-2 py-0.5 border border-gray-200 rounded hover:bg-gray-50 ml-auto text-gray-500"
+                      className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 rounded hover:bg-slate-100 ml-auto transition-colors"
                     >
                       Dismiss
                     </button>

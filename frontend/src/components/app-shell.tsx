@@ -74,27 +74,27 @@ export default function AppShell({ children, quickEntryContactId }: AppShellProp
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <p className="text-gray-500">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <p className="text-slate-500">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-slate-50">
       {/* Top navigation bar */}
-      <header className="border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+      <header className="bg-slate-900 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <h1 className="text-lg font-semibold text-gray-900">SDR CRM</h1>
+          <h1 className="text-lg font-bold text-white">SDR CRM</h1>
           <nav className="flex items-center gap-1">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
                   pathname === link.href
-                    ? "bg-gray-100 text-gray-900"
-                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
+                    ? "bg-slate-700 text-white"
+                    : "text-slate-400 hover:text-white"
                 }`}
               >
                 {link.label}
@@ -107,16 +107,20 @@ export default function AppShell({ children, quickEntryContactId }: AppShellProp
           <Button
             size="sm"
             onClick={() => setQuickEntryOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             + Log Activity
           </Button>
-          <span className="text-sm text-gray-600">{user?.full_name}</span>
-          <Badge variant="secondary" className="text-xs">
+          <span className="text-sm text-slate-300">{user?.full_name}</span>
+          <Badge variant="secondary" className="text-xs bg-slate-700 text-slate-200 hover:bg-slate-700">
             {roleLabels[user?.role || ""] || user?.role}
           </Badge>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
+          <button
+            onClick={handleLogout}
+            className="text-sm text-slate-400 hover:text-white transition-colors"
+          >
             Sign Out
-          </Button>
+          </button>
         </div>
       </header>
 
