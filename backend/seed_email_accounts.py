@@ -1,10 +1,10 @@
 """
 Seed SMTP email accounts from .env values.
 
-Reads EMAIL_1_* and EMAIL_2_* blocks from the environment, encrypts the
-password with Fernet, and upserts into the email_accounts table. The
-OWNER_EMAIL env var picks which user the account belongs to; falls back
-to the first admin user if not set.
+Reads EMAIL_N_* blocks from the environment (looks for prefixes "1" and
+"2"; blocks without an address are skipped). Encrypts the password with
+Fernet and upserts into the email_accounts table. OWNER_EMAIL picks the
+owning user; falls back to the first admin if unset.
 
 Run:  ./.venv/bin/python seed_email_accounts.py
 """

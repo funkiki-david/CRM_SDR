@@ -41,7 +41,6 @@ const SMTP_PRESETS: Record<string, Partial<SmtpForm>> = {
   "amazonsolutions.us": { smtp_host: "smtp.hostinger.com", smtp_port: 465, imap_host: "imap.hostinger.com", imap_port: 993, smtp_encryption: "ssl" },
   "outlook.com": { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
   "office365.com": { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
-  "graphictac.us": { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
 };
 
 // 默认 SMTP 设置按上游 provider 填充（点 Gmail / Outlook 的 "Use SMTP Instead" 按钮时用）
