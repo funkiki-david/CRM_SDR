@@ -380,7 +380,16 @@ async def draft_email(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate a personalized email draft using all available context"""
+    """
+    Generate a personalized email draft — TEMPORARILY FROZEN.
+    Body logic kept intact below; unfreeze by removing the 501 return.
+    """
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=501,
+        content={"error": "Email module is temporarily frozen", "code": "EMAIL_FROZEN"},
+    )
+    # --- frozen: original logic retained for restoration ---
     if not ai_service.ai_ready:
         raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
 

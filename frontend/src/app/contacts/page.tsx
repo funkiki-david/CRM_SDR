@@ -470,7 +470,13 @@ function ContactsContent() {
                         </Button>
                       );
                     })()}
-                    <Button size="sm" variant="outline" onClick={() => setEmailComposeOpen(true)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled
+                      title="Coming soon — please send emails from your Gmail directly"
+                      className="cursor-not-allowed bg-slate-100 text-slate-400"
+                    >
                       Send Email
                     </Button>
                     <Button size="sm" onClick={() => setQuickEntryOpen(true)}>

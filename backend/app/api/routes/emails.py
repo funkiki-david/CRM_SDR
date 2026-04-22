@@ -180,19 +180,24 @@ async def preview_template(
     }
 
 
-@router.post("/send", response_model=SentEmailResponse)
+@router.post("/send")
 async def send_email(
     data: ComposeRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Send an email — dispatcher based on account.provider_type:
-      - smtp          → 用 aiosmtplib 直接发
-      - gmail_oauth   → TODO: Gmail API (stub: save as draft)
-      - outlook_oauth → TODO: MS Graph API (stub: save as draft)
-    Also logs an activity in the contact's timeline.
+    Send an email — TEMPORARILY FROZEN.
+    SDRs are sending from their own Gmail for now; the CRM only records
+    activity. Unfreeze by removing the 501 return below — the original
+    SMTP / Gmail dispatcher is left intact underneath.
     """
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=501,
+        content={"error": "Email module is temporarily frozen", "code": "EMAIL_FROZEN"},
+    )
+    # --- frozen: original dispatcher retained ---
     contact = await db.get(Contact, data.contact_id)
     if contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")

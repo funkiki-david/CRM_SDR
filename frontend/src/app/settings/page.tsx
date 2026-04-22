@@ -260,7 +260,14 @@ export default function SettingsPage() {
                   Gmail / Outlook / any SMTP server
                 </p>
               </div>
-              <Button onClick={() => setAddModalOpen(true)}>
+              {/* Email sending is temporarily frozen — button disabled,
+                  modal intentionally never opens. Existing accounts above
+                  still render (schema preserved). */}
+              <Button
+                disabled
+                title="Coming soon — email sending is temporarily disabled"
+                className="cursor-not-allowed bg-slate-100 text-slate-400 hover:bg-slate-100"
+              >
                 + Add Account
               </Button>
             </div>
@@ -376,12 +383,10 @@ export default function SettingsPage() {
         <TeamMembers currentUserId={currentUserId} currentUserRole={currentUserRole} />
       </div>
 
-      {/* Add Email Account modal */}
-      <AddEmailAccount
-        open={addModalOpen}
-        onClose={() => setAddModalOpen(false)}
-        onSuccess={() => loadAccounts()}
-      />
+      {/* NOTE: AddEmailAccount modal intentionally not rendered — email
+          sending is temporarily frozen. Component import and the
+          addModalOpen state are left in place so unfreezing is a
+          one-line restoration (add <AddEmailAccount> back). */}
     </AppShell>
   );
 }

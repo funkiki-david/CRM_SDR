@@ -313,13 +313,9 @@ function EmailsInner() {
                 <div className="flex gap-2 pt-3 border-t border-gray-100">
                   <Button
                     size="sm"
-                    onClick={() => setReplyOpen(true)}
-                    disabled={!canReply}
-                    title={
-                      canReply
-                        ? undefined
-                        : "Original email isn't linked to a contact. Add the sender as a contact first."
-                    }
+                    disabled
+                    title="Coming soon — please send emails from your Gmail directly"
+                    className="cursor-not-allowed bg-slate-100 text-slate-400 hover:bg-slate-100"
                   >
                     Reply
                   </Button>

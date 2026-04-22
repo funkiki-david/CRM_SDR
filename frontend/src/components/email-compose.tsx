@@ -206,27 +206,11 @@ export default function EmailCompose({
                   <p className="text-sm text-gray-400">No templates yet. Create one in the Templates page.</p>
                 )}
                 <button
-                  onClick={async () => {
-                    if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
-                    setDrafting(true);
-                    try {
-                      // Pass selected account so AI uses its display_name + company in the signature
-                      const draft = await aiApi.draftEmail(contactId, selectedAccountId ?? undefined);
-                      setSubject(draft.subject || "");
-                      setBody(draft.body || "");
-                      refreshAIBudget();
-                    } catch (e) {
-                      if (e instanceof Error && e.message.includes("daily_limit")) {
-                        setShowLimitModal(true);
-                      }
-                      refreshAIBudget();
-                    }
-                    setDrafting(false);
-                  }}
-                  disabled={drafting || aiUsage?.at_limit}
-                  className="px-3 py-1.5 rounded-full border text-sm transition-colors border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+                  disabled
+                  title="Coming soon"
+                  className="px-3 py-1.5 rounded-full border text-sm transition-colors border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                 >
-                  {drafting ? "AI writing..." : "\u2728 AI Draft"}
+                  {"\u2728 AI Draft"}
                 </button>
                 <AIBudgetBadge usage={aiUsage} compact />
               </div>
@@ -293,15 +277,15 @@ export default function EmailCompose({
             {/* Error */}
             {error && <p className="text-sm text-red-500">{error}</p>}
 
-            {/* Actions */}
+            {/* Actions — email sending is temporarily frozen */}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={onClose}>Cancel</Button>
               <Button
-                onClick={handleSend}
-                disabled={sending || !contactEmail || !selectedAccountId}
-                title={!selectedAccountId ? "Connect an email account in Settings first" : undefined}
+                disabled
+                title="Coming soon — please send emails from your Gmail directly"
+                className="cursor-not-allowed bg-slate-100 text-slate-400 hover:bg-slate-100"
               >
-                {sending ? "Sending..." : "Send Email"}
+                Send Email
               </Button>
             </div>
           </div>

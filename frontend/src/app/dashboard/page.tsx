@@ -448,8 +448,9 @@ function FollowUpCard({
           )}
           {fu.contact_email && (
             <button
-              onClick={() => onEmail(fu)}
-              className={actionBtn}
+              disabled
+              title="Coming soon — please send emails from your Gmail directly"
+              className="text-[11px] px-2 py-0.5 bg-slate-100 text-slate-400 border border-slate-200 rounded cursor-not-allowed"
             >
               📧 Email
             </button>
