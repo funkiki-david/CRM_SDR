@@ -43,7 +43,6 @@ GOOGLE_SCOPES = [
 
 class GmailOAuthError(Exception):
     """Raised when OAuth flow / Gmail API call fails with a user-readable message."""
-    pass
 
 
 def _client_config() -> dict:

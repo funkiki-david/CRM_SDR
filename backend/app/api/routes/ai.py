@@ -5,7 +5,7 @@ All AI features powered by a single Anthropic API key (Haiku 4.5).
 
 import json
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -17,7 +17,6 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.core.config import (
     CLAUDE_MODEL,
-    AI_SEARCH_ACTIVITY_LIMIT,
     CLAUDE_MAX_TOKENS_RESEARCH,
     CLAUDE_MAX_TOKENS_EMAIL,
     AI_REPORT_CACHE_DAYS,
@@ -733,26 +732,3 @@ Generate the industries and keywords arrays per the schema. Respond with JSON on
         "industries": _clean(industries),
         "keywords": _clean(keywords),
     }
-
-
-# PAUSED: Smart Search — AI Search page removed from frontend
-# Keeping code for future re-enablement
-#
-# @router.post("/search")
-# async def smart_search(...):
-#     """Smart search — Claude reads all activities and finds relevant ones."""
-#     pass
-
-
-# DISABLED: Embedding-based search endpoints
-# Keeping pgvector schema and indexes intact for future use (>1000 contacts)
-#
-# @router.post("/embed-activity")
-# async def embed_single_activity(...):
-#     """DISABLED: Using Claude direct search instead"""
-#     pass
-#
-# @router.post("/embed-all")
-# async def embed_all_activities(...):
-#     """DISABLED: Using Claude direct search instead"""
-#     pass

@@ -7,7 +7,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Text, ForeignKey, Integer
+from sqlalchemy import DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
 

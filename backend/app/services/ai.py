@@ -434,27 +434,6 @@ Return ONLY the JSON array, no other text. If nothing matches, return an empty a
         )
         return message.content[0].text, usage
 
-    # DISABLED: Using Claude direct search instead of OpenAI embeddings
-    # Keeping code for future use when data exceeds ~1000 contacts
-    #
-    # async def create_embedding(self, text: str) -> List[float]:
-    #     """Convert text to a 1536-dimensional vector using OpenAI"""
-    #     client = openai.AsyncOpenAI(api_key=self._openai_key)
-    #     response = await client.embeddings.create(
-    #         model="text-embedding-3-small",
-    #         input=text,
-    #     )
-    #     return response.data[0].embedding
-    #
-    # async def create_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
-    #     """Batch embed multiple texts at once"""
-    #     client = openai.AsyncOpenAI(api_key=self._openai_key)
-    #     response = await client.embeddings.create(
-    #         model="text-embedding-3-small",
-    #         input=texts,
-    #     )
-    #     return [item.embedding for item in response.data]
-
 
 # Singleton instance
 ai_service = AIService()

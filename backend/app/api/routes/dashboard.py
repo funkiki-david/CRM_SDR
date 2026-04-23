@@ -6,16 +6,16 @@ Returns leads that need follow-up today, sorted by urgency
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func, or_, case
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.config import AI_DAILY_BUDGET_USD, AI_MONTHLY_BUDGET_USD
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.models.lead import Lead, LeadStatus
 from app.models.contact import Contact
 from app.models.activity import Activity, ActivityType

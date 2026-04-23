@@ -97,16 +97,8 @@ class ApolloService:
             data["q_keywords"] = q_keywords
 
         url = f"{APOLLO_BASE_URL}/v1/mixed_people/api_search"
-        print(f"=== APOLLO REQUEST ===\nURL: {url}\nBody: {data}")
-
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                url,
-                headers=self._headers(),
-                json=data,
-            )
-            if response.status_code != 200:
-                print(f"=== APOLLO ERROR {response.status_code} ===\n{response.text[:500]}")
+            response = await client.post(url, headers=self._headers(), json=data)
             response.raise_for_status()
             return response.json()
 

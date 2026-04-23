@@ -8,7 +8,7 @@ Provides:
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status

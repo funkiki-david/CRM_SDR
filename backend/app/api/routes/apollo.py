@@ -9,9 +9,9 @@ Key features:
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, or_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -63,56 +63,6 @@ async def apollo_status(current_user: User = Depends(get_current_user)):
         "message": "Apollo API key is configured" if apollo_service.is_configured
                    else "Apollo API key not set. Add it in Settings or set APOLLO_API_KEY env var.",
     }
-
-
-@router.get("/test")
-async def test_apollo(current_user: User = Depends(get_current_user)):
-    """Temporary debug endpoint — test Apollo API with minimal request"""
-    import httpx
-
-    api_key = apollo_service.api_key
-    if not api_key:
-        return {"error": "No Apollo API key configured"}
-
-    url = "https://api.apollo.io/api/v1/mixed_people/api_search"
-
-    # Attempt 1: API key in header
-    headers = {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-        "x-api-key": api_key,
-    }
-    payload = {
-        "person_locations": ["California, US"],
-        "per_page": 5,
-    }
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        r1 = await client.post(url, json=payload, headers=headers)
-        print(f"=== ATTEMPT 1 (key in header) === Status: {r1.status_code}")
-        print(f"Response: {r1.text[:500]}")
-
-        if r1.status_code == 200:
-            return {"attempt": 1, "method": "key_in_header", "status": r1.status_code, "data": r1.json()}
-
-        # Attempt 2: API key in body
-        headers2 = {"Content-Type": "application/json"}
-        payload2 = {
-            "api_key": api_key,
-            "person_locations": ["California, US"],
-            "per_page": 5,
-        }
-        r2 = await client.post(url, json=payload2, headers=headers2)
-        print(f"=== ATTEMPT 2 (key in body) === Status: {r2.status_code}")
-        print(f"Response: {r2.text[:500]}")
-
-        if r2.status_code == 200:
-            return {"attempt": 2, "method": "key_in_body", "status": r2.status_code, "data": r2.json()}
-
-        return {
-            "attempt1": {"method": "key_in_header", "status": r1.status_code, "response": r1.text[:300]},
-            "attempt2": {"method": "key_in_body", "status": r2.status_code, "response": r2.text[:300]},
-        }
 
 
 @router.post("/search")

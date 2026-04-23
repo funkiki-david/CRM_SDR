@@ -24,7 +24,6 @@ from app.models.activity import Activity, ActivityType
 from app.models.enrichment_log import EnrichmentLog
 from app.schemas.contact import (
     ContactCreate, ContactUpdate, ContactResponse, ContactListResponse,
-    DedupCheckResponse,
 )
 from app.services.apollo import apollo_service
 

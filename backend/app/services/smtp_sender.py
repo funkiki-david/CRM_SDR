@@ -22,7 +22,6 @@ import aiosmtplib
 
 class SMTPError(Exception):
     """统一的 SMTP 错误类型，前端能拿到人类可读的 message"""
-    pass
 
 
 async def test_connection(
