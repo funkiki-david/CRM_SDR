@@ -129,6 +129,72 @@ async def create_activity(
     return _build_activity_response(activity)
 
 
+# === Edit + Delete (Problem 3) ===
+
+from pydantic import BaseModel as _BM
+
+
+class ActivityPatch(_BM):
+    activity_type: Optional[str] = None
+    subject: Optional[str] = None
+    content: Optional[str] = None
+    contact_id: Optional[int] = None
+
+
+@router.patch("/{activity_id}")
+async def update_activity(
+    activity_id: int,
+    data: ActivityPatch,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit an activity. Owners can edit their own; Admin can edit any."""
+    a = await db.get(Activity, activity_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    if a.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="You can only edit your own activities")
+
+    if data.activity_type is not None:
+        try:
+            a.activity_type = ActivityType(data.activity_type.lower())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid activity_type")
+    if data.subject is not None:
+        a.subject = data.subject
+    if data.content is not None:
+        a.content = data.content
+    if data.contact_id is not None:
+        # Validate target contact exists
+        target = await db.get(Contact, data.contact_id)
+        if target is None:
+            raise HTTPException(status_code=400, detail="contact_id not found")
+        a.contact_id = data.contact_id
+
+    await db.flush()
+    result = await db.execute(
+        select(Activity)
+        .options(joinedload(Activity.contact), joinedload(Activity.user))
+        .where(Activity.id == a.id)
+    )
+    return _build_activity_response(result.scalar_one())
+
+
+@router.delete("/{activity_id}", status_code=204)
+async def delete_activity(
+    activity_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete an activity. Owners can delete their own; Admin can delete any."""
+    a = await db.get(Activity, activity_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    if a.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="You can only delete your own activities")
+    await db.delete(a)
+
+
 @router.get("/contact/{contact_id}")
 async def list_contact_activities(
     contact_id: int,

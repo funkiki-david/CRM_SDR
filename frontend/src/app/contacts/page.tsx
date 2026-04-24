@@ -152,15 +152,15 @@ function ContactsContent() {
   const [enrichResult, setEnrichResult] = useState<EnrichResponse | null>(null);
   const [enrichError, setEnrichError] = useState<string | null>(null);
 
-  // PATCH one field then merge the response back into selectedContact
-  // 失败抛异常，让 <EditableField> 的 onSave 捕获显示红边框
+  // PATCH one field then merge the response back into selectedContact.
+  // Problem 1: don't reload the entire list — splice the updated contact in
+  // place so the left panel doesn't reorder / scroll-jump.
   const updateField = async (field: keyof Contact, value: string): Promise<void> => {
     if (!selectedContact) return;
     const payload = { [field]: value || null } as Record<string, string | null>;
     const updated = await contactsApi.update(selectedContact.id, payload) as Contact;
     setSelectedContact(updated);
-    // Also refresh left-panel list so name/company changes reflect there
-    loadContacts();
+    setContacts(prev => prev.map(c => (c.id === updated.id ? updated : c)));
   };
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -640,37 +640,55 @@ function ContactsContent() {
                       <AIBudgetBadge usage={aiUsage} compact />
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-7"
-                    disabled={generatingPersonReport || aiUsage?.at_limit}
-                    onClick={async () => {
-                      if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
-                      setGeneratingPersonReport(true);
-                      try {
-                        const hasReport = !!selectedContact.ai_person_report;
-                        const data = await aiApi.personReport(selectedContact.id, hasReport);
-                        setSelectedContact({
-                          ...selectedContact,
-                          ai_person_report: data.report,
-                          ai_tags: data.tags || selectedContact.ai_tags,
-                          ai_person_generated_at: data.meta?.generated_at ?? selectedContact.ai_person_generated_at,
-                          ai_report_model: data.meta?.model ?? selectedContact.ai_report_model,
-                        });
-                        refreshAIBudget();
-                      } catch (e) {
-                        // 403 = limit hit, pop the alert modal
-                        if (e instanceof Error && e.message.includes("daily_limit")) {
-                          setShowLimitModal(true);
+                  <div className="flex items-center gap-1">
+                    {selectedContact.ai_person_report && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm("Delete this report? You can regenerate it later.")) return;
+                          await aiApi.deletePersonReport(selectedContact.id);
+                          setSelectedContact({
+                            ...selectedContact,
+                            ai_person_report: null,
+                            ai_person_generated_at: null,
+                          });
+                        }}
+                        title="Delete report"
+                        className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-7"
+                      disabled={generatingPersonReport || aiUsage?.at_limit}
+                      onClick={async () => {
+                        if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
+                        setGeneratingPersonReport(true);
+                        try {
+                          const hasReport = !!selectedContact.ai_person_report;
+                          const data = await aiApi.personReport(selectedContact.id, hasReport);
+                          setSelectedContact({
+                            ...selectedContact,
+                            ai_person_report: data.report,
+                            ai_tags: data.tags || selectedContact.ai_tags,
+                            ai_person_generated_at: data.meta?.generated_at ?? selectedContact.ai_person_generated_at,
+                            ai_report_model: data.meta?.model ?? selectedContact.ai_report_model,
+                          });
+                          refreshAIBudget();
+                        } catch (e) {
+                          if (e instanceof Error && e.message.includes("daily_limit")) {
+                            setShowLimitModal(true);
+                          }
+                          refreshAIBudget();
                         }
-                        refreshAIBudget();
-                      }
-                      setGeneratingPersonReport(false);
-                    }}
-                  >
-                    {generatingPersonReport ? "Generating..." : selectedContact.ai_person_report ? "Regenerate" : "Generate"}
-                  </Button>
+                        setGeneratingPersonReport(false);
+                      }}
+                    >
+                      {generatingPersonReport ? "Generating..." : selectedContact.ai_person_report ? "🔄 Regenerate" : "Generate"}
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {generatingPersonReport ? (
@@ -706,43 +724,60 @@ function ContactsContent() {
                       <AIBudgetBadge usage={aiUsage} compact />
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-7"
-                    disabled={generatingCompanyReport || aiUsage?.at_limit}
-                    onClick={async () => {
-                      if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
-                      setGeneratingCompanyReport(true);
-                      try {
-                        const hasReport = !!selectedContact.ai_company_report;
-                        const data = await aiApi.companyReport(selectedContact.id, hasReport);
-                        setSelectedContact({
-                          ...selectedContact,
-                          ai_company_report: data.report,
-                          ai_company_generated_at: data.meta?.generated_at ?? selectedContact.ai_company_generated_at,
-                          ai_report_model: data.meta?.model ?? selectedContact.ai_report_model,
-                        });
-                        refreshAIBudget();
-                      } catch (e) {
-                        if (e instanceof Error && e.message.includes("daily_limit")) {
-                          setShowLimitModal(true);
+                  <div className="flex items-center gap-1">
+                    {selectedContact.ai_company_report && (
+                      <button
+                        onClick={async () => {
+                          if (!confirm("Delete this report? You can regenerate it later.")) return;
+                          await aiApi.deleteCompanyReport(selectedContact.id);
+                          setSelectedContact({
+                            ...selectedContact,
+                            ai_company_report: null,
+                            ai_company_generated_at: null,
+                          });
+                        }}
+                        title="Delete report"
+                        className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-7"
+                      disabled={generatingCompanyReport || aiUsage?.at_limit}
+                      onClick={async () => {
+                        if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
+                        setGeneratingCompanyReport(true);
+                        try {
+                          const hasReport = !!selectedContact.ai_company_report;
+                          const data = await aiApi.companyReport(selectedContact.id, hasReport);
+                          setSelectedContact({
+                            ...selectedContact,
+                            ai_company_report: data.report,
+                            ai_company_generated_at: data.meta?.generated_at ?? selectedContact.ai_company_generated_at,
+                            ai_report_model: data.meta?.model ?? selectedContact.ai_report_model,
+                          });
+                          refreshAIBudget();
+                        } catch (e) {
+                          if (e instanceof Error && e.message.includes("daily_limit")) {
+                            setShowLimitModal(true);
+                          }
+                          refreshAIBudget();
                         }
-                        refreshAIBudget();
-                      }
-                      setGeneratingCompanyReport(false);
-                    }}
-                  >
-                    {generatingCompanyReport ? "Generating..." : selectedContact.ai_company_report ? "Regenerate" : "Generate"}
-                  </Button>
+                        setGeneratingCompanyReport(false);
+                      }}
+                    >
+                      {generatingCompanyReport ? "Generating..." : selectedContact.ai_company_report ? "🔄 Regenerate" : "Generate"}
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {generatingCompanyReport ? (
                     <p className="text-sm text-gray-400 animate-pulse">AI is researching this company...</p>
                   ) : selectedContact.ai_company_report ? (
-                    <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                      {selectedContact.ai_company_report}
-                    </p>
+                    <CompanyReportBody report={selectedContact.ai_company_report} />
                   ) : (
                     <p className="text-sm text-gray-400 italic">
                       Click &quot;Generate&quot; to create an AI company analysis.
@@ -769,7 +804,7 @@ function ContactsContent() {
                     {activities.map((activity) => (
                       <div
                         key={activity.id}
-                        className="flex items-start gap-3 p-3 rounded-md bg-gray-50"
+                        className="group flex items-start gap-3 p-3 rounded-md bg-gray-50 relative"
                       >
                         <span className="text-base mt-0.5">
                           {activityIcons[activity.activity_type] || "\uD83D\uDCCB"}
@@ -798,6 +833,45 @@ function ContactsContent() {
                               {activity.content}
                             </p>
                           )}
+                        </div>
+                        {/* Edit / Delete (Problem 3) — appear on hover */}
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                          <button
+                            onClick={async () => {
+                              const newSubject = prompt("Edit subject:", activity.subject || "");
+                              if (newSubject === null) return;
+                              const newContent = prompt("Edit notes:", activity.content || "");
+                              if (newContent === null) return;
+                              try {
+                                const updated = await activitiesApi.update(activity.id, {
+                                  subject: newSubject,
+                                  content: newContent,
+                                });
+                                setActivities(prev => prev.map(a => a.id === activity.id ? updated as Activity : a));
+                              } catch (e) {
+                                alert(e instanceof Error ? e.message : "Edit failed");
+                              }
+                            }}
+                            title="Edit activity"
+                            className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Delete this activity? This cannot be undone.")) return;
+                              try {
+                                await activitiesApi.delete(activity.id);
+                                setActivities(prev => prev.filter(a => a.id !== activity.id));
+                              } catch (e) {
+                                alert(e instanceof Error ? e.message : "Delete failed");
+                              }
+                            }}
+                            title="Delete activity"
+                            className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                          >
+                            🗑️
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -937,6 +1011,42 @@ function ContactsContent() {
   );
 }
 
+
+/**
+ * Renders an AI Company Report with a "data source" badge parsed from the
+ * first line. Backend asks Claude to emit either:
+ *   DATA_SOURCE: website (calitho.com)   → 🌐 grounded report
+ *   DATA_SOURCE: ai_only                  → ⚠️ name-only fallback
+ */
+function CompanyReportBody({ report }: { report: string }) {
+  const firstNL = report.indexOf("\n");
+  const firstLine = (firstNL >= 0 ? report.slice(0, firstNL) : report).trim();
+  let badge: { kind: "website" | "ai_only" | "unknown"; domain?: string } = { kind: "unknown" };
+  let body = report;
+  if (firstLine.startsWith("DATA_SOURCE: website")) {
+    const m = firstLine.match(/\(([^)]+)\)/);
+    badge = { kind: "website", domain: m ? m[1] : undefined };
+    body = firstNL >= 0 ? report.slice(firstNL + 1).trimStart() : "";
+  } else if (firstLine.startsWith("DATA_SOURCE: ai_only")) {
+    badge = { kind: "ai_only" };
+    body = firstNL >= 0 ? report.slice(firstNL + 1).trimStart() : "";
+  }
+  return (
+    <div className="space-y-2">
+      {badge.kind === "website" && (
+        <div className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-1 inline-flex items-center gap-1">
+          🌐 Based on {badge.domain || "company website"}
+        </div>
+      )}
+      {badge.kind === "ai_only" && (
+        <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1 inline-flex items-center gap-1">
+          ⚠️ AI-generated · No website data · May be inaccurate
+        </div>
+      )}
+      <p className="text-sm text-gray-600 whitespace-pre-wrap">{body}</p>
+    </div>
+  );
+}
 
 // Wrap in <Suspense> — useSearchParams() requires it per Next.js 16
 // prerender rules. Without this, `npm run build` fails for this route.

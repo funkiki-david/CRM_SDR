@@ -230,6 +230,39 @@ export const activitiesApi = {
 
   /** Paginated / filtered feed — returns {items, total, has_more} */
   feedPaged: (queryString: string) => request(`/api/activities/feed?${queryString}`),
+
+  /** Edit an activity (owners + Admin) */
+  update: (id: number, data: Record<string, unknown>) =>
+    request(`/api/activities/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  /** Delete an activity (owners + Admin) */
+  delete: (id: number) =>
+    request(`/api/activities/${id}`, { method: "DELETE" }),
+};
+
+/** Tasks API — to-dos created by Create Task on AI Suggested To-Do */
+export const tasksApi = {
+  create: (data: {
+    contact_id?: number;
+    task_type?: "call" | "email" | "meeting" | "follow_up";
+    description: string;
+    source?: string;
+  }) => request("/api/tasks", { method: "POST", body: JSON.stringify(data) }),
+
+  list: (statusFilter?: "pending" | "done") =>
+    request(`/api/tasks${statusFilter ? `?status=${statusFilter}` : ""}`),
+
+  update: (id: number, data: Record<string, unknown>) =>
+    request(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  delete: (id: number) =>
+    request(`/api/tasks/${id}`, { method: "DELETE" }),
+
+  snoozeSuggestion: (title: string, action: string, days: number) =>
+    request("/api/tasks/snooze-suggestion", {
+      method: "POST",
+      body: JSON.stringify({ title, action, days }),
+    }),
 };
 
 /**
@@ -417,6 +450,14 @@ export const aiApi = {
       method: "POST",
       body: JSON.stringify({ contact_id: contactId, force_refresh: forceRefresh }),
     }),
+
+  /** Delete a person research report (clears the field on the contact row) */
+  deletePersonReport: (contactId: number) =>
+    request(`/api/ai/report/${contactId}/person`, { method: "DELETE" }),
+
+  /** Delete a company research report (clears the field on the contact row) */
+  deleteCompanyReport: (contactId: number) =>
+    request(`/api/ai/report/${contactId}/company`, { method: "DELETE" }),
 
   /** AI draft email — optional email_account_id shapes signature */
   draftEmail: (contactId: number, emailAccountId?: number) =>

@@ -93,6 +93,36 @@ async def init_db():
             FROM email_accounts ea
             WHERE se.email_account_id = ea.id AND se.from_email IS NULL
             """,
+            # Tasks table (Problem 5: AI Suggested To-Do "Create Task")
+            """
+            CREATE TABLE IF NOT EXISTS tasks (
+                id SERIAL PRIMARY KEY,
+                contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                task_type VARCHAR(20) NOT NULL DEFAULT 'follow_up',
+                description TEXT NOT NULL,
+                due_date DATE,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                source VARCHAR(30) NOT NULL DEFAULT 'manual',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                completed_at TIMESTAMPTZ
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_tasks_status ON tasks(status)",
+            "CREATE INDEX IF NOT EXISTS ix_tasks_contact_id ON tasks(contact_id)",
+            "CREATE INDEX IF NOT EXISTS ix_tasks_user_id ON tasks(user_id)",
+            # AI suggestion snoozes
+            """
+            CREATE TABLE IF NOT EXISTS ai_suggestion_snoozes (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                suggestion_hash VARCHAR(64) NOT NULL,
+                snooze_until TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_ai_snooze_user ON ai_suggestion_snoozes(user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_ai_snooze_hash ON ai_suggestion_snoozes(suggestion_hash)",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

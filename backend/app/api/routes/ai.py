@@ -4,6 +4,7 @@ All AI features powered by a single Anthropic API key (Haiku 4.5).
 """
 
 import json
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -304,7 +305,12 @@ async def generate_company_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate an AI research report about a contact's company"""
+    """
+    Generate an AI research report about a contact's company.
+    Now grounded in real website content when available — homepage + about
+    page text are scraped and injected into the prompt so Claude reports facts
+    instead of guessing from the company name.
+    """
     if not ai_service.ai_ready:
         raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
 
@@ -322,12 +328,50 @@ async def generate_company_report(
             "report": contact.ai_company_report,
             "cached": True,
             "meta": _report_meta(contact.ai_company_generated_at, contact.ai_report_model),
+            "data_source": _extract_data_source(contact.ai_company_report),
         }
 
-    if not ai_service.ai_ready:
-        raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
+    # Try to scrape the company website first
+    from app.services.website_scraper import fetch_company_pages
+    domain, homepage_text, about_text = await fetch_company_pages(
+        contact.company_name or "",
+        contact.website or contact.company_domain,
+    )
 
-    prompt = _build_company_prompt(contact)
+    has_web_data = bool(homepage_text or about_text)
+    if has_web_data:
+        prompt = f"""Write a company research report based on the REAL website data below.
+Only include facts directly supported by the content. If something isn't covered, write "Not found on website."
+Do not invent products, customers, or numbers.
+
+Company: {contact.company_name or 'Unknown'}
+Website: https://{domain}
+Contact at this company: {contact.first_name} {contact.last_name} ({contact.title or 'role unknown'})
+
+--- Homepage content ---
+{homepage_text or '(homepage not reachable)'}
+
+--- About page content ---
+{about_text or '(about page not found)'}
+
+Report sections:
+1. Company Overview — 2-3 sentences on what they do
+2. Products / Services
+3. Company Size & Location (only if mentioned)
+4. Recent News or Updates (only if mentioned)
+5. Talking Points for SDR outreach
+
+Begin with this exact line so the UI can show a source badge:
+DATA_SOURCE: website ({domain})
+
+Then output the 5 sections in order, no preamble."""
+    else:
+        prompt = _build_company_prompt(contact) + (
+            "\n\nNo website content available — base the report only on the company name and any "
+            "common knowledge. Begin with this exact line so the UI can show a warning:\n"
+            "DATA_SOURCE: ai_only"
+        )
+
     report, _log = await call_ai_with_limit(
         db=db,
         user=current_user,
@@ -345,7 +389,54 @@ async def generate_company_report(
         "report": report,
         "cached": False,
         "meta": _report_meta(contact.ai_company_generated_at, contact.ai_report_model),
+        "data_source": _extract_data_source(report),
     }
+
+
+def _extract_data_source(report: Optional[str]) -> dict:
+    """Parse the 'DATA_SOURCE: ...' header line we asked Claude to emit."""
+    if not report:
+        return {"kind": "unknown"}
+    first_line = report.split("\n", 1)[0].strip()
+    if first_line.startswith("DATA_SOURCE: website"):
+        m = re.search(r"\(([^)]+)\)", first_line)
+        return {"kind": "website", "domain": m.group(1) if m else None}
+    if first_line.startswith("DATA_SOURCE: ai_only"):
+        return {"kind": "ai_only"}
+    return {"kind": "unknown"}
+
+
+# === Delete reports ===
+
+@router.delete("/report/{contact_id}/person", status_code=204)
+async def delete_person_report(
+    contact_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user
+    contact = await db.get(Contact, contact_id)
+    if contact is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    contact.ai_person_report = None
+    contact.ai_person_generated_at = None
+    contact.ai_tags = None
+    await db.flush()
+
+
+@router.delete("/report/{contact_id}/company", status_code=204)
+async def delete_company_report(
+    contact_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user
+    contact = await db.get(Contact, contact_id)
+    if contact is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    contact.ai_company_report = None
+    contact.ai_company_generated_at = None
+    await db.flush()
 
 
 # === AI Email Drafting ===
@@ -576,6 +667,22 @@ Remember: respond ONLY with valid JSON. No markdown. No backticks. No preamble."
         }
 
     now = datetime.now(timezone.utc)
+    # Filter out snoozed suggestions for this user (Problem 5)
+    from app.models.task import AISuggestionSnooze
+    from app.api.routes.tasks import hash_suggestion as _hash
+    snz_q = await db.execute(
+        select(AISuggestionSnooze.suggestion_hash).where(
+            AISuggestionSnooze.user_id == current_user.id,
+            AISuggestionSnooze.snooze_until > now,
+        )
+    )
+    snoozed = {row[0] for row in snz_q.all()}
+    if snoozed and isinstance(parsed, list):
+        parsed = [
+            s for s in parsed
+            if isinstance(s, dict)
+            and _hash(s.get("title", ""), s.get("action", "")) not in snoozed
+        ]
     data = {"suggestions": parsed}
     # Cache successful generation
     _SUGGEST_CACHE[current_user.id] = {"data": data, "generated_at": now}

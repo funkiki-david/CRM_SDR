@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { dashboardApi, activitiesApi, aiApi, authApi } from "@/lib/api";
+import { dashboardApi, activitiesApi, aiApi, authApi, tasksApi } from "@/lib/api";
 import { useAIBudget } from "@/components/ai-budget";
 
 // ==================== Types ====================
@@ -303,6 +303,7 @@ function FollowUpsSection({
   onEmail: (fu: FollowUp) => void;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ overdue: false, today: false, upcoming: false });
+  const [search, setSearch] = useState("");
 
   if (loading) {
     return (
@@ -321,25 +322,58 @@ function FollowUpsSection({
     );
   }
 
+  // Problem 4: client-side filter on contact name / company / activity note
+  const filterFn = (f: FollowUp): boolean => {
+    if (!search.trim()) return true;
+    const term = search.trim().toLowerCase();
+    return (
+      (f.contact_name || "").toLowerCase().includes(term) ||
+      (f.company || "").toLowerCase().includes(term) ||
+      (f.last_activity_content || "").toLowerCase().includes(term) ||
+      (f.last_activity_summary || "").toLowerCase().includes(term) ||
+      (f.follow_up_reason || "").toLowerCase().includes(term)
+    );
+  };
   const sections: Array<{ key: "overdue" | "today" | "upcoming"; items: FollowUp[] }> = [
-    { key: "overdue", items: data?.grouped.overdue ?? [] },
-    { key: "today", items: data?.grouped.today ?? [] },
-    { key: "upcoming", items: data?.grouped.upcoming ?? [] },
+    { key: "overdue", items: (data?.grouped.overdue ?? []).filter(filterFn) },
+    { key: "today", items: (data?.grouped.today ?? []).filter(filterFn) },
+    { key: "upcoming", items: (data?.grouped.upcoming ?? []).filter(filterFn) },
   ];
+  const searchActive = search.trim().length > 0;
+  // Problem 4: when >10 in a section, collapse to 10 unless expanded or searching
+  const VISIBLE_LIMIT = 10;
+  const shownTotal = sections.reduce((n, s) => n + s.items.length, 0);
 
   return (
     <section>
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
         <h2 className="text-lg font-semibold text-slate-900">Follow-Ups Needed</h2>
-        <span className="bg-slate-100 text-slate-700 rounded-full px-2 text-sm font-semibold">{total}</span>
+        <span className="bg-slate-100 text-slate-700 rounded-full px-2 text-sm font-semibold">{shownTotal}</span>
+        <div className="relative flex-1 min-w-[180px]">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, company, or note..."
+            className="h-8 text-xs bg-white border border-slate-200 rounded-md pr-7"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs"
+              aria-label="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-5">
         {sections.map(({ key, items }) => {
           if (items.length === 0) return null;
           const style = URGENCY_STYLES[key];
-          const isExpanded = expanded[key];
-          const shown = isExpanded ? items : items.slice(0, 3);
+          const isExpanded = expanded[key] || searchActive;
+          const shown = isExpanded ? items : items.slice(0, VISIBLE_LIMIT);
           return (
             <div key={key}>
               <div className="flex items-center justify-between mb-2">
@@ -347,12 +381,12 @@ function FollowUpsSection({
                   <span className="mr-1">{style.dot}</span>
                   {style.label} <span className="text-slate-400">({items.length})</span>
                 </p>
-                {items.length > 3 && (
+                {!searchActive && items.length > VISIBLE_LIMIT && (
                   <button
                     onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
                     className="text-xs text-slate-600 hover:text-slate-900 hover:underline"
                   >
-                    {isExpanded ? "Show Less" : `View All (${items.length})`}
+                    {isExpanded ? "Show Less" : `Show all (${items.length})`}
                   </button>
                 )}
               </div>
@@ -370,6 +404,11 @@ function FollowUpsSection({
             </div>
           );
         })}
+        {searchActive && shownTotal === 0 && (
+          <p className="text-sm text-slate-400 text-center py-4">
+            No follow-ups match &ldquo;{search}&rdquo;.
+          </p>
+        )}
       </div>
     </section>
   );
@@ -776,43 +815,126 @@ function AISuggestionsSection() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {visible.map((s, i) => {
-            const style = PRIORITY_STYLES[s.priority] || PRIORITY_STYLES.INSIGHT;
-            return (
-              <Card key={i} className="border border-slate-200">
-                <CardContent className="py-3 px-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`inline-flex items-center py-0 font-medium ${style.color}`}>
-                      {style.icon} {i + 1}. {style.label}
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium text-slate-900 mb-1.5">{s.title}</p>
-                  <p className="text-xs text-slate-600 mb-1.5">
-                    <span className="font-medium">Reason:</span> {s.reason}
-                  </p>
-                  <p className="text-xs text-slate-700 mb-2">
-                    <span className="font-medium">Suggested action:</span> {s.action}
-                  </p>
-                  <div className="flex gap-1.5 pt-2 border-t border-slate-100">
-                    <button
-                      onClick={() => alert("Create Task feature coming soon — for now, log the activity manually.")}
-                      className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border border-slate-200 rounded hover:bg-slate-100 transition-colors"
-                    >
-                      + Create Task
-                    </button>
-                    <button
-                      onClick={() => dismiss(s.title)}
-                      className="text-[11px] px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 rounded hover:bg-slate-100 ml-auto transition-colors"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {visible.map((s, i) => (
+            <SuggestionCard
+              key={i}
+              suggestion={s}
+              index={i}
+              onDismiss={() => dismiss(s.title)}
+            />
+          ))}
         </div>
       )}
     </section>
+  );
+}
+
+function SuggestionCard({
+  suggestion: s, index: i, onDismiss,
+}: {
+  suggestion: AISuggestion;
+  index: number;
+  onDismiss: () => void;
+}) {
+  const style = PRIORITY_STYLES[s.priority] || PRIORITY_STYLES.INSIGHT;
+  const [created, setCreated] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
+  const [snoozed, setSnoozed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Map AI's suggested action verb → task_type
+  const inferType = (action: string): "call" | "email" | "meeting" | "follow_up" => {
+    const a = action.toLowerCase();
+    if (a.includes("call") || a.includes("phone")) return "call";
+    if (a.includes("email") || a.includes("send") || a.includes("write")) return "email";
+    if (a.includes("meeting") || a.includes("meet ")) return "meeting";
+    return "follow_up";
+  };
+
+  const createTask = async () => {
+    setCreating(true);
+    setError(null);
+    try {
+      await tasksApi.create({
+        contact_id: s.contact_id ?? undefined,
+        task_type: inferType(s.action || ""),
+        description: s.action || s.title,
+        source: "ai_suggestion",
+      });
+      setCreated(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create task");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const snooze = async (days: number) => {
+    setSnoozeMenuOpen(false);
+    try {
+      await tasksApi.snoozeSuggestion(s.title, s.action || "", days);
+      setSnoozed(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Snooze failed");
+    }
+  };
+
+  if (snoozed) return null;
+
+  return (
+    <Card className={`border border-slate-200 transition-opacity ${created ? "opacity-60" : ""}`}>
+      <CardContent className="py-3 px-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`inline-flex items-center py-0 font-medium ${style.color}`}>
+            {style.icon} {i + 1}. {style.label}
+          </span>
+        </div>
+        <p className="text-sm font-medium text-slate-900 mb-1.5">{s.title}</p>
+        <p className="text-xs text-slate-600 mb-1.5">
+          <span className="font-medium">Reason:</span> {s.reason}
+        </p>
+        <p className="text-xs text-slate-700 mb-2">
+          <span className="font-medium">Suggested action:</span> {s.action}
+        </p>
+        {error && <p className="text-xs text-red-500 mb-1">{error}</p>}
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+          {created ? (
+            <span className="text-[11px] px-2 py-1 text-slate-500">✓ Task created</span>
+          ) : (
+            <Button
+              size="sm"
+              onClick={createTask}
+              disabled={creating}
+              className="text-[11px] h-7 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {creating ? "Creating..." : "+ Create Task"}
+            </Button>
+          )}
+          <div className="relative">
+            <button
+              onClick={() => setSnoozeMenuOpen(v => !v)}
+              disabled={created}
+              className="text-[11px] px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded transition-colors disabled:opacity-50"
+            >
+              😴 Snooze
+            </button>
+            {snoozeMenuOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded shadow-lg z-10 text-[11px] min-w-[120px]">
+                <button onClick={() => snooze(1)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">Tomorrow</button>
+                <button onClick={() => snooze(3)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">In 3 days</button>
+                <button onClick={() => snooze(7)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">Next week</button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onDismiss}
+            className="text-[11px] text-slate-400 hover:text-slate-600 ml-auto"
+          >
+            Dismiss
+          </button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

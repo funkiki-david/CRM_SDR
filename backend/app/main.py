@@ -22,6 +22,7 @@ from app.api.routes.apollo import router as apollo_router
 from app.api.routes.system_settings import router as settings_router
 from app.api.routes.ai import router as ai_router
 from app.api.routes.users import router as users_router
+from app.api.routes.tasks import router as tasks_router
 
 
 @asynccontextmanager
@@ -71,6 +72,7 @@ app.include_router(apollo_router)
 app.include_router(settings_router)
 app.include_router(ai_router)
 app.include_router(users_router)
+app.include_router(tasks_router)
 
 
 @app.get("/")

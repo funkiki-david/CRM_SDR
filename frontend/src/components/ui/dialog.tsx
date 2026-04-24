@@ -7,8 +7,27 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+function Dialog({ onOpenChange, ...props }: DialogPrimitive.Root.Props) {
+  // Project rule (Problem 2): dialogs only close via explicit Save / Send /
+  // Cancel / ✕ buttons. Suppress close events whose reason is outside-press,
+  // escape-key, or focus-out so a stray click on the backdrop or an ESC keypress
+  // mid-typing doesn't wipe out the user's input.
+  const handleOpenChange: DialogPrimitive.Root.Props["onOpenChange"] = (open, details) => {
+    if (!open) {
+      const reason = details?.reason as string | undefined;
+      if (reason === "outside-press" || reason === "escape-key" || reason === "focus-out") {
+        return;
+      }
+    }
+    onOpenChange?.(open, details);
+  };
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  );
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {

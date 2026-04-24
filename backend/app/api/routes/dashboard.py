@@ -109,6 +109,53 @@ async def get_follow_ups(
             "owner_name": lead.owner.full_name,
         })
 
+    # Mix in pending Tasks (Problem 5: AI "Create Task" + future manual tasks)
+    from app.models.task import Task as _Task
+    from datetime import date as _date
+    today = _date.today()
+    tasks_q = await db.execute(
+        select(_Task).where(_Task.status == "pending").order_by(_Task.due_date.asc().nullslast())
+    )
+    contact_ids = set()
+    raw_tasks = list(tasks_q.scalars().all())
+    for t in raw_tasks:
+        if t.contact_id:
+            contact_ids.add(t.contact_id)
+    contact_map: dict[int, Contact] = {}
+    if contact_ids:
+        cres = await db.execute(select(Contact).where(Contact.id.in_(contact_ids)))
+        for c in cres.scalars().all():
+            contact_map[c.id] = c
+    for t in raw_tasks:
+        c = contact_map.get(t.contact_id) if t.contact_id else None
+        if t.due_date and t.due_date < today:
+            urgency = "overdue"
+        elif t.due_date and t.due_date == today:
+            urgency = "today"
+        else:
+            urgency = "upcoming"
+        follow_ups.append({
+            "lead_id": f"task-{t.id}",  # prefix so frontend can tell tasks from lead-follow-ups
+            "task_id": t.id,
+            "contact_id": t.contact_id,
+            "contact_name": f"{c.first_name} {c.last_name}".strip() if c else "(no contact)",
+            "contact_email": c.email if c else None,
+            "contact_phone": (c.mobile_phone or c.office_phone) if c else None,
+            "company": c.company_name if c else None,
+            "title": c.title if c else None,
+            "lead_status": "task",
+            "follow_up_date": t.due_date.isoformat() if t.due_date else None,
+            "follow_up_reason": t.description,
+            "urgency": urgency,
+            "last_activity_date": None,
+            "last_activity_type": None,
+            "last_activity_summary": None,
+            "last_activity_content": t.description[:200],
+            "days_since_last_contact": None,
+            "owner_name": None,
+            "source": t.source,
+        })
+
     # 按紧急程度分组 Group by urgency for easier frontend rendering
     grouped = {"overdue": [], "today": [], "upcoming": []}
     for f in follow_ups:
