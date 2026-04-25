@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EditableField } from "@/components/editable-field";
+import EditActivity from "@/components/edit-activity";
 import { contactsApi, activitiesApi, aiApi } from "@/lib/api";
 
 // === Type definitions ===
@@ -79,6 +80,8 @@ interface Activity {
   content: string | null;
   user_name: string | null;
   created_at: string;
+  contact_id: number;
+  contact_name?: string | null;
 }
 
 // === Display helpers ===
@@ -143,6 +146,7 @@ function ContactsContent() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
@@ -837,21 +841,7 @@ function ContactsContent() {
                         {/* Edit / Delete (Problem 3) — appear on hover */}
                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
                           <button
-                            onClick={async () => {
-                              const newSubject = prompt("Edit subject:", activity.subject || "");
-                              if (newSubject === null) return;
-                              const newContent = prompt("Edit notes:", activity.content || "");
-                              if (newContent === null) return;
-                              try {
-                                const updated = await activitiesApi.update(activity.id, {
-                                  subject: newSubject,
-                                  content: newContent,
-                                });
-                                setActivities(prev => prev.map(a => a.id === activity.id ? updated as Activity : a));
-                              } catch (e) {
-                                alert(e instanceof Error ? e.message : "Edit failed");
-                              }
-                            }}
+                            onClick={() => setEditingActivity(activity)}
                             title="Edit activity"
                             className="text-slate-400 hover:text-slate-600 text-xs px-1"
                           >
@@ -1005,6 +995,16 @@ function ContactsContent() {
             loadActivities(selectedContact.id);
           }
           setQuickEntryOpen(false);
+        }}
+      />
+
+      {/* Activity edit dialog (replaces the old prompt() flow) */}
+      <EditActivity
+        open={editingActivity !== null}
+        activity={editingActivity}
+        onClose={() => setEditingActivity(null)}
+        onSaved={(updated) => {
+          setActivities(prev => prev.map(a => a.id === updated.id ? updated as Activity : a));
         }}
       />
     </AppShell>

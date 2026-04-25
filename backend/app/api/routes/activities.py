@@ -139,6 +139,9 @@ class ActivityPatch(_BM):
     subject: Optional[str] = None
     content: Optional[str] = None
     contact_id: Optional[int] = None
+    # Allow editing the original timestamp (e.g. user logged a call yesterday
+    # but only got around to entering it today). ISO format with timezone.
+    created_at: Optional[datetime] = None
 
 
 @router.patch("/{activity_id}")
@@ -170,6 +173,8 @@ async def update_activity(
         if target is None:
             raise HTTPException(status_code=400, detail="contact_id not found")
         a.contact_id = data.contact_id
+    if data.created_at is not None:
+        a.created_at = data.created_at
 
     await db.flush()
     result = await db.execute(
