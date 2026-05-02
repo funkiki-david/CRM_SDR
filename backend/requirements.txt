@@ -48,3 +48,7 @@ google-api-python-client==2.149.0
 
 # DISABLED: OpenAI (kept for future embedding-based search)
 # openai==2.32.0
+
+# Testing
+pytest>=8.0
+pytest-asyncio>=1.0
