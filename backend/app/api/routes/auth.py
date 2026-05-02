@@ -27,7 +27,7 @@ from app.services.gmail_oauth import (
     GmailOAuthError,
 )
 
-router = APIRouter(prefix="/api/auth", tags=["认证"])
+router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
 
 @router.post("/login", response_model=TokenResponse)

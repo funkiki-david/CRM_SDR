@@ -93,7 +93,7 @@ async def create_user(
         if mgr is None or mgr.role == UserRole.SDR:
             raise HTTPException(
                 status_code=400,
-                detail="manager_id 必须指向一个 Manager 或 Admin",
+                detail="manager_id must point to a Manager or Admin user",
             )
 
     user = User(
@@ -138,7 +138,7 @@ async def edit_user(
         if mgr is None or mgr.role == UserRole.SDR:
             raise HTTPException(
                 status_code=400,
-                detail="manager_id 必须指向一个 Manager 或 Admin",
+                detail="manager_id must point to a Manager or Admin user",
             )
         user.manager_id = data.manager_id
 
@@ -160,7 +160,7 @@ async def deactivate_user(
     if user_id == current_user.id:
         raise HTTPException(
             status_code=400,
-            detail="不能停用自己的账号（避免自锁）",
+            detail="You cannot deactivate your own account",
         )
 
     user = await db.get(User, user_id)

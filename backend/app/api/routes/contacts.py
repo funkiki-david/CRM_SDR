@@ -274,7 +274,7 @@ async def download_template(
 @router.post("/import")
 async def import_contacts(
     file: UploadFile = File(...),
-    update_existing: bool = Query(False, description="如果邮箱已存在，是否更新（否则跳过）"),
+    update_existing: bool = Query(False, description="If a matching email already exists, update the existing contact instead of skipping it"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -297,7 +297,7 @@ async def import_contacts(
         try:
             text = raw.decode("gbk")
         except UnicodeDecodeError:
-            raise HTTPException(status_code=400, detail="文件编码不支持（需 UTF-8 或 GBK）")
+            raise HTTPException(status_code=400, detail="Unsupported file encoding (UTF-8 or GBK required)")
 
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:

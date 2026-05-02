@@ -104,7 +104,7 @@ async def add_email_account(
         if not (data.smtp_host and data.smtp_port and data.smtp_username and data.smtp_password):
             raise HTTPException(
                 status_code=400,
-                detail="SMTP 模式需要 smtp_host / smtp_port / smtp_username / smtp_password",
+                detail="SMTP mode requires smtp_host / smtp_port / smtp_username / smtp_password",
             )
         account.smtp_host = data.smtp_host
         account.smtp_port = data.smtp_port
@@ -228,7 +228,7 @@ async def send_email(
         try:
             password = decrypt_password(email_account.smtp_password_encrypted)
         except ValueError as e:
-            raise HTTPException(status_code=500, detail=f"密码解密失败，请重新保存账号: {e}")
+            raise HTTPException(status_code=500, detail=f"Password decryption failed — please re-save the account: {e}")
 
         try:
             result_id = await smtp_send_mail(
