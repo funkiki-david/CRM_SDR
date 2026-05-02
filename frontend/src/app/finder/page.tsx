@@ -318,9 +318,15 @@ export default function FinderPage() {
       <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            <h1 className="text-xl font-semibold text-gray-900">Find Prospects</h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Search 210M+ B2B &amp; B2C contact database. Search is free — credits are only used when importing contacts to your CRM.
+            <h1
+              className="font-display font-bold"
+              style={{ fontSize: 28, color: "var(--text-primary)" }}
+            >
+              Find prospects
+            </h1>
+            <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+              Search 210M+ B2B &amp; B2C contact database. Search is free —
+              credits are only used when importing contacts to your CRM.
             </p>
           </div>
           {!showGuide && (
@@ -330,9 +336,31 @@ export default function FinderPage() {
               className="text-xs shrink-0"
               onClick={() => toggleGuide(true)}
             >
-              📖 Show Guide
+              Show Guide
             </Button>
           )}
+        </div>
+
+        {/* Phase D: 3-step pill flow — Search → Select → Import to CRM */}
+        <div className="flex items-center gap-2 flex-wrap text-[13px]">
+          {[
+            { n: 1, label: "Search" },
+            { n: 2, label: "Select" },
+            { n: 3, label: "Import to CRM" },
+          ].map((step, i) => (
+            <span key={step.n} className="flex items-center gap-2">
+              <span
+                className="rounded-full px-3 py-1 font-medium"
+                style={{
+                  background: "var(--brand-blue-soft)",
+                  color: "var(--brand-blue)",
+                }}
+              >
+                {step.n}. {step.label}
+              </span>
+              {i < 2 && <span style={{ color: "var(--text-muted)" }}>→</span>}
+            </span>
+          ))}
         </div>
 
         {/* === Intro Guide (dismissible) === */}

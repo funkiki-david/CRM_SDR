@@ -146,21 +146,58 @@ function EmailsInner() {
       <div className="max-w-6xl mx-auto px-6 py-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-gray-900">Emails</h1>
+          <h1
+            className="font-display font-bold"
+            style={{ fontSize: 28, color: "var(--text-primary)" }}
+          >
+            Emails
+          </h1>
           <Button
             variant="outline"
             size="sm"
             onClick={handleSync}
             disabled={syncing}
           >
-            {syncing ? "Syncing inbox..." : "🔄 Sync Inbox"}
+            {syncing ? "Syncing inbox..." : "Sync Inbox"}
           </Button>
+        </div>
+
+        {/* Phase D: SMTP-paused banner — amber-light. Always visible
+            because every Reply/Forward in the app is currently disabled. */}
+        <div
+          className="rounded-xl px-5 py-3.5 flex items-start gap-3 flex-wrap"
+          style={{
+            background: "var(--brand-amber-soft)",
+            border: "1px solid var(--brand-amber)",
+            color: "var(--brand-amber-dark)",
+          }}
+        >
+          <div className="flex-1 min-w-0 text-sm">
+            <strong>Email sending is paused</strong> — SMTP unavailable on
+            Railway. You can still view inbox + log emails from the contact
+            page; replies need to come from your own Gmail for now.
+          </div>
+          <button
+            onClick={() => alert(
+              "Email sending is paused while we evaluate Resend / Gmail OAuth as " +
+              "alternatives. Inbound IMAP sync continues to work; outbound " +
+              "everything stays disabled until we ship one of those."
+            )}
+            className="text-xs px-3 py-1 rounded-full"
+            style={{
+              background: "var(--bg-card)",
+              color: "var(--brand-amber-dark)",
+              border: "1px solid var(--brand-amber)",
+            }}
+          >
+            Learn more
+          </button>
         </div>
 
         {/* Sync toast */}
         {syncResult && (
           <div
-            className={`p-2 rounded border text-sm ${
+            className={`p-2 rounded-lg border text-sm ${
               syncResult.ok
                 ? "bg-green-50 border-green-200 text-green-700"
                 : "bg-red-50 border-red-200 text-red-700"
@@ -173,8 +210,12 @@ function EmailsInner() {
         {/* Tabs + search */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex gap-1.5">
-            {(["inbox", "sent", "all"] as Tab[]).map((t) => {
+            {(["all", "sent", "inbox"] as Tab[]).map((t) => {
               const active = tab === t;
+              // "Drafts" tab is in the spec but no draft data exists yet
+              // (sent_emails has status=draft column but no draft creation
+              // path while email is frozen). Surface "All / Sent / Inbox"
+              // for now; Drafts will land once compose is unfrozen.
               const label =
                 t === "inbox"
                   ? `Inbox (${counts.received})`
@@ -189,11 +230,22 @@ function EmailsInner() {
                     setSelectedId(null);
                     setDetail(null);
                   }}
-                  className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${
-                    active
-                      ? "bg-gray-900 text-white border-gray-900"
-                      : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
+                  className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium border transition-colors ${
+                    active ? "" : "hover:border-slate-400"
                   }`}
+                  style={
+                    active
+                      ? {
+                          background: "var(--brand-blue)",
+                          color: "#fff",
+                          borderColor: "var(--brand-blue)",
+                        }
+                      : {
+                          background: "var(--bg-card)",
+                          color: "var(--text-secondary)",
+                          borderColor: "var(--border-strong)",
+                        }
+                  }
                 >
                   {label}
                 </button>
@@ -274,7 +326,10 @@ function EmailsInner() {
             ) : (
               <div className="p-6 space-y-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">
+                  <h2
+                    className="font-display font-bold"
+                    style={{ fontSize: 20, color: "var(--text-primary)" }}
+                  >
                     {detail.subject || "(no subject)"}
                   </h2>
                   <div className="mt-2 text-sm text-gray-600 space-y-0.5">
@@ -314,12 +369,17 @@ function EmailsInner() {
                   <Button
                     size="sm"
                     disabled
-                    title="Coming soon — please send emails from your Gmail directly"
+                    title="Email sending paused"
                     className="cursor-not-allowed bg-slate-100 text-slate-400 hover:bg-slate-100"
                   >
                     Reply
                   </Button>
-                  <Button size="sm" variant="outline" disabled title="Coming soon">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled
+                    title="Email sending paused"
+                  >
                     Forward
                   </Button>
                 </div>

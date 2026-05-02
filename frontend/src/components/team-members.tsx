@@ -49,6 +49,13 @@ function relativeLogin(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
+// Active when logged in within last 24h, otherwise Away.
+function presence(iso: string | null): "active" | "away" {
+  if (!iso) return "away";
+  const diff = Date.now() - new Date(iso).getTime();
+  return diff < 24 * 60 * 60 * 1000 ? "active" : "away";
+}
+
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   manager: "Manager",
@@ -115,8 +122,13 @@ export default function TeamMembers({ currentUserId, currentUserRole }: TeamMemb
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="text-base">Team Members</CardTitle>
-            <p className="text-sm text-gray-500">
+            <CardTitle
+              className="font-display font-bold"
+              style={{ fontSize: 18, color: "var(--text-primary)" }}
+            >
+              Team Members
+            </CardTitle>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
               {members.length} {members.length === 1 ? "user" : "users"}
               {isAdmin && " · Admin can add, edit, and deactivate"}
             </p>
@@ -153,6 +165,27 @@ export default function TeamMembers({ currentUserId, currentUserRole }: TeamMemb
                       >
                         {ROLE_LABEL[m.role]}
                       </Badge>
+                      {m.is_active && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                          style={
+                            presence(m.last_login_at) === "active"
+                              ? { background: "var(--brand-green-soft)", color: "var(--brand-green)" }
+                              : { background: "var(--border-faint)", color: "var(--text-muted)" }
+                          }
+                        >
+                          <span
+                            className="inline-block w-1.5 h-1.5 rounded-full"
+                            style={{
+                              background:
+                                presence(m.last_login_at) === "active"
+                                  ? "var(--brand-green)"
+                                  : "var(--text-muted)",
+                            }}
+                          />
+                          {presence(m.last_login_at) === "active" ? "Active" : "Away"}
+                        </span>
+                      )}
                       {!m.is_active && (
                         <Badge variant="outline" className="text-[10px] py-0 px-1.5">Inactive</Badge>
                       )}
