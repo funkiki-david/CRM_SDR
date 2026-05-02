@@ -217,21 +217,21 @@ export default function EditActivity({ open, activity, onClose, onSaved }: EditA
           {/* v1.3 § 11.4: optional lead status bump */}
           <div className="space-y-1.5">
             <Label className="text-xs">
-              Lead Status <span className="text-slate-400">(optional — 推进到哪一步)</span>
+              Lead Status <span className="text-slate-400">(optional — advance to which stage)</span>
             </Label>
             <select
               value={leadStatus}
               onChange={(e) => setLeadStatus(e.target.value)}
               className="w-full h-9 px-3 rounded-md border border-slate-200 bg-white text-sm"
             >
-              <option value="">(不更新)</option>
-              <option value="new">新线索</option>
-              <option value="contacted">已联系</option>
-              <option value="interested">有兴趣</option>
-              <option value="meeting_set">已约会议</option>
-              <option value="proposal">已发提案</option>
-              <option value="closed_won">成交</option>
-              <option value="closed_lost">失败</option>
+              <option value="">(no change)</option>
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="interested">Interested</option>
+              <option value="meeting_set">Meeting set</option>
+              <option value="proposal">Proposal sent</option>
+              <option value="closed_won">Closed-won</option>
+              <option value="closed_lost">Closed-lost</option>
             </select>
           </div>
 

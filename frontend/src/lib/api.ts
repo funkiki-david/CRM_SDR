@@ -100,12 +100,16 @@ export const dashboardApi = {
  * Contacts API
  */
 export const contactsApi = {
-  /** List contacts with optional search */
-  list: (search?: string, skip = 0, limit = 50) => {
+  /** List contacts with optional search.
+   *  By default archived contacts (is_active=false) are hidden;
+   *  pass includeArchived=true to surface them.
+   */
+  list: (search?: string, skip = 0, limit = 50, includeArchived = false) => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     params.set("skip", String(skip));
     params.set("limit", String(limit));
+    if (includeArchived) params.set("include_archived", "true");
     return request(`/api/contacts?${params}`);
   },
 

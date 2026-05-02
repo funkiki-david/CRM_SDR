@@ -128,6 +128,8 @@ async def init_db():
             "ALTER TABLE activities ADD COLUMN IF NOT EXISTS outcome VARCHAR(20)",
             "ALTER TABLE activities ADD COLUMN IF NOT EXISTS temperature VARCHAR(20)",
             "ALTER TABLE activities ADD COLUMN IF NOT EXISTS duration_minutes INTEGER",
+            # Contact lifecycle: is_active=false = archived (hidden by default).
+            "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

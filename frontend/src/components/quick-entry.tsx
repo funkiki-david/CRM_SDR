@@ -760,7 +760,7 @@ export default function QuickEntry({
                 <Label>
                   Lead status{" "}
                   <span style={{ color: "var(--text-muted)" }} className="font-normal">
-                    (optional — 推进到哪一步)
+                    (optional — advance to which stage)
                   </span>
                 </Label>
                 <select
@@ -769,14 +769,14 @@ export default function QuickEntry({
                   className="w-full h-9 px-3 rounded-full border bg-white text-sm"
                   style={{ borderColor: "var(--border-strong)" }}
                 >
-                  <option value="">(不更新)</option>
-                  <option value="new">新线索</option>
-                  <option value="contacted">已联系</option>
-                  <option value="interested">有兴趣</option>
-                  <option value="meeting_set">已约会议</option>
-                  <option value="proposal">已发提案</option>
-                  <option value="closed_won">成交</option>
-                  <option value="closed_lost">失败</option>
+                  <option value="">(no change)</option>
+                  <option value="new">New</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="interested">Interested</option>
+                  <option value="meeting_set">Meeting set</option>
+                  <option value="proposal">Proposal sent</option>
+                  <option value="closed_won">Closed-won</option>
+                  <option value="closed_lost">Closed-lost</option>
                 </select>
               </div>
 

@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     # Frontend base URL — where to send the user after OAuth completes
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 
+    # === Test / development email recipient ===
+    # Default recipient for any test or dev email-send logic. Always route
+    # test sends through the shared team mailbox — never a Manager's personal
+    # Gmail (Doug, Steve, etc.). Override per-environment via TEST_EMAIL_RECIPIENT.
+    TEST_EMAIL_RECIPIENT: str = "marketing@graphictac.biz"
+
     # DISABLED: Using Claude direct search instead of OpenAI embeddings
     # OPENAI_API_KEY: str = ""
 

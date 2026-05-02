@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import String, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Boolean, String, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -64,6 +64,13 @@ class Contact(Base):
         ARRAY(String(30)), server_default="{}", name="industry_tags_arr"
     )
     notes: Mapped[Optional[str]] = mapped_column(Text)
+
+    # === Lifecycle ===
+    # is_active=False = "archived". Hidden from default contact list; PATCH to
+    # restore. Lead/Activity history is preserved either way.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
 
     # === Import tracking ===
     import_source: Mapped[Optional[str]] = mapped_column(String(50))   # manual | csv_import | apollo

@@ -93,12 +93,20 @@ async def list_contacts(
     search: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
+    include_archived: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List contacts with search and pagination"""
+    """List contacts with search and pagination.
+
+    By default archived contacts (is_active=false) are hidden — pass
+    include_archived=true to surface them in the list.
+    """
     query = select(Contact)
     query = _apply_ownership_filter(query, current_user)
+
+    if not include_archived:
+        query = query.where(Contact.is_active.is_(True))
 
     if search:
         search_term = f"%{search}%"

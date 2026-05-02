@@ -117,6 +117,7 @@ class ContactUpdate(BaseModel):
     industry_tags: Optional[List[str]] = None
     notes: Optional[str] = None
     assigned_to: Optional[int] = None
+    is_active: Optional[bool] = None
 
 
 class ContactResponse(BaseModel):
@@ -148,6 +149,7 @@ class ContactResponse(BaseModel):
     apollo_id: Optional[str] = None
     owner_id: int
     assigned_to: Optional[int] = None
+    is_active: bool = True
     created_at: datetime
     updated_at: datetime
     # Phase C: latest LeadStatus value for the contact's most-recent lead.

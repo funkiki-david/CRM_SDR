@@ -179,8 +179,8 @@ def _contact_label(contact: Optional[Contact]) -> str:
     """Short '<First Last> @ <Company>' label for the rationale field.
     Falls back gracefully when company is missing."""
     if contact is None:
-        return "未知联系人"
-    name = f"{contact.first_name or ''} {contact.last_name or ''}".strip() or "未命名"
+        return "Unknown contact"
+    name = f"{contact.first_name or ''} {contact.last_name or ''}".strip() or "Unnamed"
     if contact.company_name:
         return f"{name} @ {contact.company_name}"
     return name
@@ -242,7 +242,7 @@ async def rule_pacing_hot_48h(
         if a.created_at < cutoff:
             continue
         out.append(_make(cid, "pacing_hot_48h", "high", "email",
-                         f"{cid} — 24h 内发感谢/总结邮件"))
+                         f"{cid} — Send recap/thank-you email within 24h"))
     return await _decorate(db, out)
 
 
@@ -262,7 +262,7 @@ async def rule_pacing_email_no_reply_3d(
         if a.created_at >= cutoff:  # too recent — wait
             continue
         out.append(_make(cid, "pacing_email_no_reply_3d", "medium", "call",
-                         f"{cid} — 邮件 3d 无回，改打电话"))
+                         f"{cid} — Email sent 3d ago, no reply — try a call"))
     return await _decorate(db, out)
 
 
@@ -283,7 +283,7 @@ async def rule_pacing_call_no_answer_2d(
         if a.created_at >= cutoff:
             continue
         out.append(_make(cid, "pacing_call_no_answer_2d", "medium", "email",
-                         f"{cid} — 电话未接 2d，发邮件 + LinkedIn"))
+                         f"{cid} — Call missed 2d ago — try email + LinkedIn"))
     return await _decorate(db, out)
 
 
@@ -294,7 +294,7 @@ async def rule_pacing_silent_7d(
 ) -> list[TodoSuggestion]:
     return await _silent_window(db, user, min_days=7, max_days=14,
                                 rule_id="pacing_silent_7d", urgency="low",
-                                action="email", phrase="沉默 7d，发轻 touch")
+                                action="email", phrase="Silent 7d — send a light touch")
 
 
 # 5. pacing_silent_14d
@@ -304,7 +304,7 @@ async def rule_pacing_silent_14d(
 ) -> list[TodoSuggestion]:
     return await _silent_window(db, user, min_days=14, max_days=30,
                                 rule_id="pacing_silent_14d", urgency="medium",
-                                action="email", phrase="沉默 14d，写 check-in")
+                                action="email", phrase="Silent 14d — write a check-in")
 
 
 # 6. pacing_silent_30d
@@ -314,7 +314,7 @@ async def rule_pacing_silent_30d(
 ) -> list[TodoSuggestion]:
     return await _silent_window(db, user, min_days=30, max_days=60,
                                 rule_id="pacing_silent_30d", urgency="high",
-                                action="email", phrase="沉默 30d，触发挽回")
+                                action="email", phrase="Silent 30d — re-engagement push")
 
 
 # 7. pacing_silent_60d
@@ -324,7 +324,7 @@ async def rule_pacing_silent_60d(
 ) -> list[TodoSuggestion]:
     return await _silent_window(db, user, min_days=60, max_days=90,
                                 rule_id="pacing_silent_60d", urgency="medium",
-                                action="email", phrase="沉默 60d，break-up 邮件或归档")
+                                action="email", phrase="Silent 60d — send break-up email or archive")
 
 
 # 8. pacing_silent_90d
@@ -334,7 +334,7 @@ async def rule_pacing_silent_90d(
 ) -> list[TodoSuggestion]:
     return await _silent_window(db, user, min_days=90, max_days=None,
                                 rule_id="pacing_silent_90d", urgency="low",
-                                action="review", phrase="沉默 > 90d，归档或激活")
+                                action="review", phrase="Silent 90d+ — archive or revive")
 
 
 # 9. pacing_quote_5d: lead at quote stage + last activity > 5d
@@ -347,7 +347,7 @@ async def rule_pacing_quote_5d(
 ) -> list[TodoSuggestion]:
     return await _quote_window(db, user, min_days=5, urgency="high",
                                rule_id="pacing_quote_5d", action="call",
-                               phrase="报价 5d 无音，打电话问反馈")
+                               phrase="Proposal sent 5d ago, no reply — call for feedback")
 
 
 # 10. pacing_quote_10d
@@ -357,7 +357,7 @@ async def rule_pacing_quote_10d(
 ) -> list[TodoSuggestion]:
     return await _quote_window(db, user, min_days=10, urgency="medium",
                                rule_id="pacing_quote_10d", action="email",
-                               phrase='报价 10d 无音，发 "still interested?"')
+                               phrase='Proposal sent 10d ago, no reply — ask "still interested?"')
 
 
 # 11. pacing_inbound_call_2h: last activity content has "inbound" keyword < 2h
@@ -377,7 +377,7 @@ async def rule_pacing_inbound_call_2h(
         if a.created_at < cutoff:  # too old (> 2h)
             continue
         out.append(_make(cid, "pacing_inbound_call_2h", "high", "call",
-                         f"{cid} — 客户来电，立即回拨"))
+                         f"{cid} — Inbound call received — call back immediately"))
     return await _decorate(db, out)
 
 
@@ -425,7 +425,7 @@ async def rule_pacing_email_received_today(
             continue
         out.append(_make(e.contact_id, "pacing_email_received_today",
                          "high", "email",
-                         f"{e.contact_id} — 当天收到邮件，今天回"))
+                         f"{e.contact_id} — Email received today — reply today"))
     return await _decorate(db, out)
 
 
@@ -571,7 +571,7 @@ async def rule_data_missing_phone(
     )
     out = [
         _make_data(c.id, "data_missing_phone", "low", "review",
-                   f"{c.id} — 缺手机号 + 办公室电话")
+                   f"{c.id} — Missing both mobile and office phone")
         for c in res.scalars().all()
     ]
     return await _decorate(db, out)
@@ -588,7 +588,7 @@ async def rule_data_missing_linkedin(
     )
     out = [
         _make_data(c.id, "data_missing_linkedin", "low", "review",
-                   f"{c.id} — 缺 LinkedIn")
+                   f"{c.id} — Missing LinkedIn URL")
         for c in res.scalars().all()
     ]
     return await _decorate(db, out)
@@ -608,7 +608,7 @@ async def rule_data_missing_industry(
     )
     out = [
         _make_data(c.id, "data_missing_industry", "low", "review",
-                   f"{c.id} — 缺行业 / 公司规模")
+                   f"{c.id} — Missing industry / company size")
         for c in res.scalars().all()
     ]
     return await _decorate(db, out)
@@ -633,7 +633,7 @@ async def rule_data_dead_contact_30d(
     )
     out = [
         _make_data(c.id, "data_dead_contact_30d", "medium", "review",
-                   f"{c.id} — 创建 30d+ 还 0 条活动，判断是不是 dead")
+                   f"{c.id} — Created 30d+ ago with no activity — review if dead")
         for c in res.scalars().all()
     ]
     return await _decorate(db, out)
@@ -654,7 +654,7 @@ async def rule_data_lead_stuck_60d(
     )
     out = [
         _make_data(lead.contact_id, "data_lead_stuck_60d", "medium", "review",
-                   f"{lead.contact_id} — Lead 60d+ 没动，推进或归档")
+                   f"{lead.contact_id} — Lead idle 60d+ — push forward or archive")
         for lead in res.scalars().all()
     ]
     return await _decorate(db, out)
@@ -680,7 +680,7 @@ async def rule_data_collision_7d(
     rows = res.all()
     out = [
         _make_data(cid, "data_collision_7d", "high", "review",
-                   f"{cid} — 7d 内多人触达，检查撞车")
+                   f"{cid} — Multiple SDRs touched this contact in 7d — check for collision")
         for cid, _n in rows
     ]
     return await _decorate(db, out)
@@ -766,7 +766,7 @@ async def rule_stage_new_stuck_7d(
         rule_id="stage_new_stuck_7d",
         urgency="medium",
         action="email",
-        phrase="还在 NEW 7d+，该首次 reach out",
+        phrase="Still NEW 7d+ — time for first reach out",
     )
 
 
@@ -782,7 +782,7 @@ async def rule_stage_contacted_stuck_5d(
         rule_id="stage_contacted_stuck_5d",
         urgency="medium",
         action="call",
-        phrase="联系后 5d+ 无进展，跟进或换渠道",
+        phrase="Contacted 5d+ ago, no progress — follow up or switch channel",
     )
 
 
@@ -798,7 +798,7 @@ async def rule_stage_interested_stuck_14d(
         rule_id="stage_interested_stuck_14d",
         urgency="high",
         action="email",
-        phrase="客户有兴趣 14d+ 没推进，约会议",
+        phrase="Interested 14d+ with no progress — book a meeting",
     )
 
 
@@ -814,7 +814,7 @@ async def rule_stage_meeting_set_stuck_7d(
         rule_id="stage_meeting_set_stuck_7d",
         urgency="high",
         action="review",
-        phrase="会议已约 7d+，记录结果或推进下一步",
+        phrase="Meeting set 7d+ ago — log outcome or move to next step",
     )
 
 
@@ -830,7 +830,7 @@ async def rule_stage_proposal_stuck_5d(
         rule_id="stage_proposal_stuck_5d",
         urgency="high",
         action="call",
-        phrase="提案 5d+ 没回应，打电话问反馈",
+        phrase="Proposal 5d+ with no reply — call for feedback",
     )
 
 
@@ -846,5 +846,5 @@ async def rule_stage_won_repurchase_90d(
         rule_id="stage_won_repurchase_90d",
         urgency="medium",
         action="call",
-        phrase="成交 90d+ 没续单，复购检查",
+        phrase="Closed-won 90d+ with no repeat order — check in for repurchase",
     )

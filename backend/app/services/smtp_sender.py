@@ -54,15 +54,15 @@ async def test_connection(
         finally:
             await client.quit()
     except aiosmtplib.SMTPAuthenticationError as e:
-        raise SMTPError(f"认证失败（用户名/密码错误）: {e}")
+        raise SMTPError(f"Authentication failed (wrong username or password): {e}")
     except aiosmtplib.SMTPConnectError as e:
-        raise SMTPError(f"无法连接到服务器 {host}:{port}: {e}")
+        raise SMTPError(f"Could not connect to server {host}:{port}: {e}")
     except aiosmtplib.SMTPServerDisconnected as e:
-        raise SMTPError(f"服务器断开连接: {e}")
+        raise SMTPError(f"Server disconnected: {e}")
     except TimeoutError:
-        raise SMTPError(f"连接 {host}:{port} 超时（{timeout}s）")
+        raise SMTPError(f"Connection to {host}:{port} timed out ({timeout}s)")
     except Exception as e:
-        raise SMTPError(f"SMTP 测试失败: {type(e).__name__}: {e}")
+        raise SMTPError(f"SMTP test failed: {type(e).__name__}: {e}")
 
 
 async def send_mail(
@@ -118,13 +118,13 @@ async def send_mail(
                 timeout=timeout,
             )
     except aiosmtplib.SMTPAuthenticationError as e:
-        raise SMTPError(f"SMTP 认证失败: {e}")
+        raise SMTPError(f"SMTP authentication failed: {e}")
     except aiosmtplib.SMTPRecipientsRefused as e:
-        raise SMTPError(f"收件人被拒绝 {to_email}: {e}")
+        raise SMTPError(f"Recipient {to_email} rejected: {e}")
     except aiosmtplib.SMTPSenderRefused as e:
-        raise SMTPError(f"发件人被拒绝 {from_email}: {e}")
+        raise SMTPError(f"Sender {from_email} rejected: {e}")
     except Exception as e:
-        raise SMTPError(f"发送失败: {type(e).__name__}: {e}")
+        raise SMTPError(f"Send failed: {type(e).__name__}: {e}")
 
     # 返回简单的成功标记（aiosmtplib 成功时返回 (errors, response_str)）
     return str(result[1]) if result else "sent"

@@ -123,12 +123,12 @@ def _fetch_blocking(
     try:
         mail = imaplib.IMAP4_SSL(imap_host, imap_port, timeout=20)
     except Exception as e:
-        raise IMAPError(f"IMAP 连接失败 {imap_host}:{imap_port}: {e}")
+        raise IMAPError(f"IMAP connection failed {imap_host}:{imap_port}: {e}")
     try:
         try:
             mail.login(username, password)
         except imaplib.IMAP4.error as e:
-            raise IMAPError(f"IMAP 认证失败（{username}）: {e}")
+            raise IMAPError(f"IMAP authentication failed ({username}): {e}")
 
         mail.select("INBOX", readonly=True)
 

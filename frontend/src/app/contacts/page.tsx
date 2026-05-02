@@ -49,6 +49,7 @@ interface Contact {
   ai_company_generated_at: string | null;
   ai_report_model: string | null;
   lead_status: string | null;  // Phase C: backend now bulk-loads this
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -242,6 +243,7 @@ function ContactsContent() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [search, setSearch] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
@@ -282,10 +284,11 @@ function ContactsContent() {
   const loadContacts = useCallback(async (
     searchTerm: string | undefined,
     page: number,
+    includeArchived: boolean,
   ) => {
     const skip = (page - 1) * PAGE_SIZE;
     try {
-      const data = await contactsApi.list(searchTerm, skip, PAGE_SIZE);
+      const data = await contactsApi.list(searchTerm, skip, PAGE_SIZE, includeArchived);
       setContacts(data.contacts || []);
       setTotalCount(data.total || 0);
     } catch {
@@ -310,9 +313,12 @@ function ContactsContent() {
 
   // Initial + page change — load whatever page we're currently on.
   useEffect(() => {
-    loadContacts(search || undefined, currentPage);
+    loadContacts(search || undefined, currentPage, showArchived);
     if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
-  }, [currentPage, loadContacts]);  // intentionally NOT depending on `search`
+    // intentionally NOT depending on `search` or `showArchived` — those are
+    // handled by the debounced effect below to avoid double-fetches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, loadContacts]);
 
   // Search with debounce → reset to page 1 + reload
   useEffect(() => {
@@ -320,12 +326,12 @@ function ContactsContent() {
       if (currentPage !== 1) {
         setCurrentPage(1);  // triggers the effect above
       } else {
-        loadContacts(search || undefined, 1);
+        loadContacts(search || undefined, 1, showArchived);
       }
     }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, showArchived]);
 
   // If a contact ID is in the URL, select it (might land on a different page)
   useEffect(() => {
@@ -397,6 +403,18 @@ function ContactsContent() {
                 {exporting ? "Exporting..." : "↑ Export"}
               </Button>
             </div>
+            <label
+              className="flex items-center gap-1.5 text-xs select-none cursor-pointer"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-gray-300"
+              />
+              Show archived
+            </label>
           </div>
 
           {/* Select all checkbox */}
@@ -650,10 +668,36 @@ function ContactsContent() {
                       size="sm"
                       variant="outline"
                       disabled
-                      title="Coming soon — please send emails from your Gmail directly"
+                      title="Email sending paused"
                       className="cursor-not-allowed bg-slate-100 text-slate-400"
                     >
                       Send Email
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        const archiving = selectedContact.is_active !== false;
+                        const verb = archiving ? "Archive" : "Restore";
+                        if (!confirm(`${verb} ${selectedContact.first_name} ${selectedContact.last_name}?`)) return;
+                        try {
+                          const updated = await contactsApi.update(selectedContact.id, {
+                            is_active: !archiving ? true : false,
+                          }) as Contact;
+                          setSelectedContact(updated);
+                          // Refresh list — archived contact may drop out of view
+                          loadContacts(search || undefined, currentPage, showArchived);
+                        } catch (e) {
+                          alert(e instanceof Error ? e.message : `${verb} failed`);
+                        }
+                      }}
+                      title={
+                        selectedContact.is_active === false
+                          ? "Restore this contact to the active list"
+                          : "Hide this contact from the default list"
+                      }
+                    >
+                      {selectedContact.is_active === false ? "Restore" : "Archive"}
                     </Button>
                     <Button size="sm" onClick={() => setQuickEntryOpen(true)}>
                       + Log Action
@@ -1072,7 +1116,7 @@ function ContactsContent() {
         onClose={() => setAddContactOpen(false)}
         onSuccess={(newId) => {
           setAddContactOpen(false);
-          loadContacts(search || undefined, currentPage);
+          loadContacts(search || undefined, currentPage, showArchived);
           // Auto-select the new contact
           contactsApi.get(newId).then((c: Contact) => {
             setSelectedContact(c);
@@ -1085,7 +1129,7 @@ function ContactsContent() {
       <ImportContacts
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        onSuccess={() => loadContacts(search || undefined, currentPage)}
+        onSuccess={() => loadContacts(search || undefined, currentPage, showArchived)}
       />
 
       {/* AI Limit Reached modal — shown when user tries AI while at limit */}
