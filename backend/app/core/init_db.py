@@ -123,6 +123,11 @@ async def init_db():
             """,
             "CREATE INDEX IF NOT EXISTS ix_ai_snooze_user ON ai_suggestion_snoozes(user_id)",
             "CREATE INDEX IF NOT EXISTS ix_ai_snooze_hash ON ai_suggestion_snoozes(suggestion_hash)",
+            # Activity audit step B: outcome / temperature / duration columns
+            # for the new Log Action mockup. All optional, no backfill.
+            "ALTER TABLE activities ADD COLUMN IF NOT EXISTS outcome VARCHAR(20)",
+            "ALTER TABLE activities ADD COLUMN IF NOT EXISTS temperature VARCHAR(20)",
+            "ALTER TABLE activities ADD COLUMN IF NOT EXISTS duration_minutes INTEGER",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

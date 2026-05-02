@@ -20,6 +20,10 @@ class ActivityCreate(BaseModel):
     # v1.3 (spec § 11): SDR can optionally bump the linked lead's status
     # while logging the activity. None = leave lead.status alone.
     lead_status_update: Optional[str] = None
+    # Audit-step-B mockup fields (all optional)
+    outcome: Optional[str] = None         # positive / neutral / no_answer / negative
+    temperature: Optional[str] = None     # hot / warm / neutral / cold
+    duration_minutes: Optional[int] = None
 
 
 class ActivityResponse(BaseModel):
@@ -32,6 +36,10 @@ class ActivityResponse(BaseModel):
     contact_id: int
     user_id: int
     created_at: datetime
+    # Audit-step-B mockup fields
+    outcome: Optional[str] = None
+    temperature: Optional[str] = None
+    duration_minutes: Optional[int] = None
     # Joined fields for display
     contact_name: Optional[str] = None
     user_name: Optional[str] = None

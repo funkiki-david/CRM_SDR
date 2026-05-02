@@ -53,6 +53,10 @@ def _build_activity_response(activity: Activity) -> dict:
         "contact_id": activity.contact_id,
         "user_id": activity.user_id,
         "created_at": activity.created_at,
+        # Audit step B: mockup fields surfaced in API responses too
+        "outcome": activity.outcome,
+        "temperature": activity.temperature,
+        "duration_minutes": activity.duration_minutes,
         "contact_name": f"{activity.contact.first_name} {activity.contact.last_name}" if activity.contact else None,
         "user_name": activity.user.full_name if activity.user else None,
     }
@@ -90,6 +94,10 @@ async def create_activity(
         content=data.content,
         contact_id=data.contact_id,
         user_id=current_user.id,
+        # Audit step B: optional mockup fields
+        outcome=data.outcome,
+        temperature=data.temperature,
+        duration_minutes=data.duration_minutes,
     )
     db.add(activity)
     await db.flush()
@@ -185,6 +193,10 @@ class ActivityPatch(_BM):
     created_at: Optional[datetime] = None
     # v1.3 § 11.3: same status-update lever as POST.
     lead_status_update: Optional[str] = None
+    # Audit step B: editable mockup fields
+    outcome: Optional[str] = None
+    temperature: Optional[str] = None
+    duration_minutes: Optional[int] = None
 
 
 @router.patch("/{activity_id}")
@@ -218,6 +230,14 @@ async def update_activity(
         a.contact_id = data.contact_id
     if data.created_at is not None:
         a.created_at = data.created_at
+    # Audit step B: mockup fields editable too. None = leave alone; explicit
+    # empty string would still mean "set to empty", which is fine.
+    if data.outcome is not None:
+        a.outcome = data.outcome or None
+    if data.temperature is not None:
+        a.temperature = data.temperature or None
+    if data.duration_minutes is not None:
+        a.duration_minutes = data.duration_minutes
 
     # v1.3 § 11.3: also accept lead_status_update during edits.
     await _maybe_update_lead_status(db, a.contact_id, data.lead_status_update)

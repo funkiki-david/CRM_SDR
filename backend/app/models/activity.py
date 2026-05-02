@@ -36,6 +36,15 @@ class Activity(Base):
     subject: Mapped[Optional[str]] = mapped_column(String(300))  # 一句话摘要
     content: Mapped[Optional[str]] = mapped_column(Text)          # 详细内容/备注
 
+    # === Mockup additions (audit step B) ===
+    # outcome:     positive / neutral / no_answer / negative
+    # temperature: hot / warm / neutral / cold
+    # duration_minutes: integer minutes
+    # All optional — older rows have NULL, no backfill required.
+    outcome: Mapped[Optional[str]] = mapped_column(String(20))
+    temperature: Mapped[Optional[str]] = mapped_column(String(20))
+    duration_minutes: Mapped[Optional[int]] = mapped_column()
+
     # === AI 生成摘要 ===
     ai_summary: Mapped[Optional[str]] = mapped_column(Text)  # AI 自动生成的一句话摘要
 
