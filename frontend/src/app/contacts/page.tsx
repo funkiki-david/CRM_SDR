@@ -21,7 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EditableField } from "@/components/editable-field";
 import EditActivity from "@/components/edit-activity";
-import { contactsApi, activitiesApi, aiApi } from "@/lib/api";
+import { contactsApi, activitiesApi, aiApi, tasksApi } from "@/lib/api";
 
 // === Type definitions ===
 
@@ -48,8 +48,102 @@ interface Contact {
   ai_person_generated_at: string | null;
   ai_company_generated_at: string | null;
   ai_report_model: string | null;
+  lead_status: string | null;  // Phase C: backend now bulk-loads this
   created_at: string;
   updated_at: string;
+}
+
+// === Phase C helpers ====================================================
+
+/** First letter of first + last name; falls back to email or "?". */
+function getInitials(c: { first_name?: string; last_name?: string; email?: string | null }): string {
+  const first = (c.first_name || "").trim();
+  const last = (c.last_name || "").trim();
+  if (first || last) {
+    return `${first[0] || ""}${last[0] || ""}`.toUpperCase() || "?";
+  }
+  return (c.email || "?").trim().slice(0, 1).toUpperCase();
+}
+
+/**
+ * Derive an avatar tint from a stable hash of the contact's name. We don't
+ * want the colour jumping around when the contact is reloaded, so it's
+ * hashed not random. Cycles through the brand 4 colours.
+ */
+function avatarColor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  const palette = [
+    "var(--brand-blue)",
+    "var(--brand-amber)",
+    "var(--brand-green)",
+    "var(--brand-red)",
+  ];
+  return palette[Math.abs(h) % palette.length];
+}
+
+interface AvatarProps {
+  contact: { first_name?: string; last_name?: string; email?: string | null };
+  size?: number;  // px
+}
+function Avatar({ contact, size = 36 }: AvatarProps) {
+  const initials = getInitials(contact);
+  const fontSize = Math.round(size * 0.4);
+  const colour = avatarColor(`${contact.first_name || ""}${contact.last_name || ""}${contact.email || ""}`);
+  return (
+    <div
+      className="flex items-center justify-center rounded-full text-white font-semibold shrink-0"
+      style={{ width: size, height: size, fontSize, background: colour }}
+      aria-hidden
+    >
+      {initials}
+    </div>
+  );
+}
+
+/**
+ * Pill-shaped status badge for the contact's most recent lead. The label
+ * matches the dashboard's status-bucket vocabulary so UI feels coherent.
+ */
+const STATUS_LABEL: Record<string, string> = {
+  new: "New",
+  contacted: "Waiting",
+  interested: "Sample sent",
+  meeting_set: "Hot",
+  proposal: "Negotiation",
+  closed_won: "Won",
+  closed_lost: "Lost",
+};
+
+const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
+  new:          { bg: "var(--bg-app)",          fg: "var(--text-muted)" },
+  contacted:    { bg: "var(--brand-amber-soft)", fg: "var(--brand-amber-dark)" },
+  interested:   { bg: "var(--brand-blue-soft)",  fg: "var(--brand-blue)" },
+  meeting_set:  { bg: "var(--brand-red-soft)",   fg: "var(--brand-red)" },
+  proposal:     { bg: "var(--brand-green-soft)", fg: "var(--brand-green)" },
+  closed_won:   { bg: "var(--brand-green-soft)", fg: "var(--brand-green)" },
+  closed_lost:  { bg: "var(--bg-app)",           fg: "var(--text-muted)" },
+};
+
+function StatusBadge({ status }: { status: string | null | undefined }) {
+  if (!status) return null;
+  const label = STATUS_LABEL[status] || status;
+  const style = STATUS_STYLE[status] || { bg: "var(--bg-app)", fg: "var(--text-muted)" };
+  return (
+    <span
+      className="rounded-full"
+      style={{
+        background: style.bg,
+        color: style.fg,
+        padding: "1px 8px",
+        fontSize: 11,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </span>
+  );
 }
 
 // 5 fields the enrich endpoint tries to fill
@@ -177,51 +271,29 @@ function ContactsContent() {
   const { usage: aiUsage, refresh: refreshAIBudget } = useAIBudget();
   const [showLimitModal, setShowLimitModal] = useState(false);
 
-  // 列表分页：每页 50，滚到底加载下一页
-  // Pagination: 50 per page, infinite scroll at bottom.
-  const PAGE_SIZE = 50;
+  // Phase C pagination: 30 per page, explicit Prev/Next + numbered pages.
+  // Replaced the previous infinite-scroll with offset-based pagination so
+  // Manager always knows exactly what page they're on (mockup spec).
+  const PAGE_SIZE = 30;
   const [totalCount, setTotalCount] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
 
-  /**
-   * 加载联系人：append=false 重置列表（首次或搜索变化时用），append=true 追加下一页。
-   * Backend 已支持 search（first/last/email/company/title ilike）+ skip + limit。
-   */
   const loadContacts = useCallback(async (
-    searchTerm?: string,
-    append = false,
-    skip = 0,
+    searchTerm: string | undefined,
+    page: number,
   ) => {
-    if (append) setLoadingMore(true);
+    const skip = (page - 1) * PAGE_SIZE;
     try {
       const data = await contactsApi.list(searchTerm, skip, PAGE_SIZE);
-      if (append) {
-        setContacts(prev => [...prev, ...(data.contacts || [])]);
-      } else {
-        setContacts(data.contacts || []);
-      }
+      setContacts(data.contacts || []);
       setTotalCount(data.total || 0);
     } catch {
-      if (!append) setContacts([]);
+      setContacts([]);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
   }, []);
-
-  // 滚到底部自动加载下一页
-  const handleListScroll = useCallback(() => {
-    const el = listScrollRef.current;
-    if (!el || loadingMore) return;
-    const { scrollTop, scrollHeight, clientHeight } = el;
-    // 距底部 120px 内触发
-    if (scrollHeight - scrollTop - clientHeight < 120) {
-      if (contacts.length < totalCount) {
-        loadContacts(search || undefined, true, contacts.length);
-      }
-    }
-  }, [loadingMore, contacts.length, totalCount, search, loadContacts]);
 
   // Load activities for selected contact
   const loadActivities = useCallback(async (contactId: number) => {
@@ -236,12 +308,26 @@ function ContactsContent() {
     }
   }, []);
 
-  // Initial load
+  // Initial + page change — load whatever page we're currently on.
   useEffect(() => {
-    loadContacts();
-  }, [loadContacts]);
+    loadContacts(search || undefined, currentPage);
+    if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
+  }, [currentPage, loadContacts]);  // intentionally NOT depending on `search`
 
-  // If a contact ID is in the URL, select it
+  // Search with debounce → reset to page 1 + reload
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (currentPage !== 1) {
+        setCurrentPage(1);  // triggers the effect above
+      } else {
+        loadContacts(search || undefined, 1);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  // If a contact ID is in the URL, select it (might land on a different page)
   useEffect(() => {
     if (preselectedId && contacts.length > 0) {
       const found = contacts.find((c) => c.id === Number(preselectedId));
@@ -252,16 +338,7 @@ function ContactsContent() {
     }
   }, [preselectedId, contacts, loadActivities]);
 
-  // Search with debounce — 重置列表，从 skip=0 开始
-  // Debounce search → reload page 1 (server-side filter)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // Reset scroll + reload from start
-      if (listScrollRef.current) listScrollRef.current.scrollTop = 0;
-      loadContacts(search || undefined, false, 0);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search, loadContacts]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   // Select a contact
   function handleSelectContact(contact: Contact) {
@@ -346,25 +423,22 @@ function ContactsContent() {
             </div>
           )}
 
-          {/* Contact list */}
-          <div
-            ref={listScrollRef}
-            onScroll={handleListScroll}
-            className="flex-1 overflow-y-auto"
-          >
+          {/* Phase C: contact list — avatar + status badge per row */}
+          <div ref={listScrollRef} className="flex-1 overflow-y-auto">
             {loading ? (
-              <p className="text-sm text-gray-400 p-4">Loading...</p>
+              <p className="text-sm p-4" style={{ color: "var(--text-muted)" }}>Loading...</p>
             ) : contacts.length === 0 ? (
-              <p className="text-sm text-gray-400 p-4">
+              <p className="text-sm p-4" style={{ color: "var(--text-muted)" }}>
                 No contacts found. Click &quot;+ Add&quot; to create one.
               </p>
             ) : (
               contacts.map((contact) => (
                 <div
                   key={contact.id}
-                  className={`flex items-center gap-2 px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors cursor-pointer ${
-                    selectedContact?.id === contact.id ? "bg-gray-100" : ""
+                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                    selectedContact?.id === contact.id ? "bg-slate-100" : "hover:bg-slate-50"
                   }`}
+                  style={{ borderBottom: "1px solid var(--border-faint)" }}
                   onClick={() => handleSelectContact(contact)}
                 >
                   <input
@@ -382,56 +456,154 @@ function ContactsContent() {
                     onClick={(e) => e.stopPropagation()}
                     className="h-3.5 w-3.5 rounded border-gray-300 shrink-0"
                   />
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm text-gray-900">
+                  <Avatar contact={contact} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm" style={{ color: "var(--text-primary)" }}>
                       {contact.first_name} {contact.last_name}
                     </p>
                     {contact.title && (
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>
                         {contact.title}
                       </p>
                     )}
                     {contact.company_name && (
-                      <p className="text-xs text-gray-400 truncate">
+                      <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
                         {contact.company_name}
                       </p>
                     )}
                   </div>
+                  {contact.lead_status && contact.lead_status !== "new" && (
+                    <StatusBadge status={contact.lead_status} />
+                  )}
                 </div>
               ))
             )}
-            {loadingMore && (
-              <p className="text-xs text-gray-400 text-center py-3">Loading more…</p>
-            )}
           </div>
+
+          {/* Phase C: bottom pagination — "Showing X-Y of Z" + Prev / pages / Next */}
+          {totalCount > 0 && (
+            <div
+              className="flex items-center justify-between px-4 py-3"
+              style={{ borderTop: "1px solid var(--border-faint)" }}
+            >
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, totalCount)} of {totalCount}
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="rounded-full px-3 py-1 text-xs font-medium border disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{
+                    background: "var(--bg-card)",
+                    color: "var(--text-secondary)",
+                    borderColor: "var(--border-strong)",
+                  }}
+                >
+                  Prev
+                </button>
+                {/* Compact page numbers (max 5 visible). */}
+                {(() => {
+                  const pages: (number | "…")[] = [];
+                  const max = totalPages;
+                  if (max <= 5) {
+                    for (let i = 1; i <= max; i++) pages.push(i);
+                  } else if (currentPage <= 3) {
+                    pages.push(1, 2, 3, "…", max);
+                  } else if (currentPage >= max - 2) {
+                    pages.push(1, "…", max - 2, max - 1, max);
+                  } else {
+                    pages.push(1, "…", currentPage, "…", max);
+                  }
+                  return pages.map((p, i) =>
+                    p === "…" ? (
+                      <span key={`e${i}`} className="px-1 text-xs" style={{ color: "var(--text-muted)" }}>…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => setCurrentPage(p as number)}
+                        className="rounded-full text-xs font-medium"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          background: currentPage === p ? "var(--brand-blue)" : "var(--bg-card)",
+                          color: currentPage === p ? "#fff" : "var(--text-secondary)",
+                          border: `1px solid ${currentPage === p ? "var(--brand-blue)" : "var(--border-strong)"}`,
+                        }}
+                      >
+                        {p}
+                      </button>
+                    )
+                  );
+                })()}
+                <button
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="rounded-full px-3 py-1 text-xs font-medium border disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{
+                    background: "var(--bg-card)",
+                    color: "var(--text-secondary)",
+                    borderColor: "var(--border-strong)",
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* === Right Panel: Contact Detail (70%) === */}
         <div className="w-[70%] overflow-y-auto">
           {selectedContact === null ? (
-            <div className="flex items-center justify-center h-full text-gray-400">
-              Select a contact to view details
-            </div>
+            <PriorityContactsLanding onPick={handleSelectContact} />
           ) : (
             <div className="p-6 space-y-6">
-              {/* --- Basic Info + Log Activity button --- */}
+              {/* --- Header: Back / Avatar + Fraunces name / actions --- */}
               <div>
-                <div className="flex items-start justify-between">
-                  <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-1">
-                    <EditableField
-                      value={selectedContact.first_name}
-                      onSave={(v) => updateField("first_name", v)}
-                      placeholder="First name"
-                      emptyLabel="(first)"
-                    />
-                    <EditableField
-                      value={selectedContact.last_name}
-                      onSave={(v) => updateField("last_name", v)}
-                      placeholder="Last name"
-                      emptyLabel="(last)"
-                    />
-                  </h2>
-                  <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedContact(null);
+                    setActivities([]);
+                  }}
+                  className="text-sm rounded-full px-3 py-1 mb-3 border transition-colors hover:bg-slate-50"
+                  style={{
+                    color: "var(--text-secondary)",
+                    borderColor: "var(--border-strong)",
+                    background: "var(--bg-card)",
+                  }}
+                >
+                  ← Back
+                </button>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <Avatar contact={selectedContact} size={48} />
+                    <div>
+                      <h2
+                        className="font-display font-bold flex items-center gap-1"
+                        style={{ fontSize: 24, color: "var(--text-primary)", lineHeight: 1.2 }}
+                      >
+                        <EditableField
+                          value={selectedContact.first_name}
+                          onSave={(v) => updateField("first_name", v)}
+                          placeholder="First name"
+                          emptyLabel="(first)"
+                        />
+                        <EditableField
+                          value={selectedContact.last_name}
+                          onSave={(v) => updateField("last_name", v)}
+                          placeholder="Last name"
+                          emptyLabel="(last)"
+                        />
+                      </h2>
+                      {selectedContact.lead_status && (
+                        <div className="mt-1.5">
+                          <StatusBadge status={selectedContact.lead_status} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-wrap justify-end">
                     {(() => {
                       const fullyEnriched = ENRICH_FIELDS.every(
                         (f) => Boolean(selectedContact[f])
@@ -484,7 +656,7 @@ function ContactsContent() {
                       Send Email
                     </Button>
                     <Button size="sm" onClick={() => setQuickEntryOpen(true)}>
-                      + Log Activity
+                      + Log Action
                     </Button>
                   </div>
                 </div>
@@ -630,7 +802,7 @@ function ContactsContent() {
                 <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-sm font-medium text-gray-700">
-                      AI Person Report
+                      Person Report
                     </CardTitle>
                     <div className="flex items-center gap-2 mt-0.5">
                       {selectedContact.ai_person_generated_at && (
@@ -714,7 +886,7 @@ function ContactsContent() {
                 <CardHeader className="pb-2 flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-sm font-medium text-gray-700">
-                      AI Company Report
+                      Company Report
                     </CardTitle>
                     <div className="flex items-center gap-2 mt-0.5">
                       {selectedContact.ai_company_generated_at && (
@@ -869,19 +1041,11 @@ function ContactsContent() {
                 )}
               </div>
 
-              {/* --- AI Suggestions Panel (placeholder) --- */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-700">
-                    AI Suggestions
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-400 italic">
-                    AI-powered follow-up suggestions will appear here once there are enough activities logged.
-                  </p>
-                </CardContent>
-              </Card>
+              {/* --- Phase C: contact-specific Suggestions panel --- */}
+              <ContactSuggestions
+                contactId={selectedContact.id}
+                onLogAction={() => setQuickEntryOpen(true)}
+              />
             </div>
           )}
         </div>
@@ -908,7 +1072,7 @@ function ContactsContent() {
         onClose={() => setAddContactOpen(false)}
         onSuccess={(newId) => {
           setAddContactOpen(false);
-          loadContacts();
+          loadContacts(search || undefined, currentPage);
           // Auto-select the new contact
           contactsApi.get(newId).then((c: Contact) => {
             setSelectedContact(c);
@@ -921,7 +1085,7 @@ function ContactsContent() {
       <ImportContacts
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        onSuccess={() => loadContacts()}
+        onSuccess={() => loadContacts(search || undefined, currentPage)}
       />
 
       {/* AI Limit Reached modal — shown when user tries AI while at limit */}
@@ -1047,6 +1211,228 @@ function CompanyReportBody({ report }: { report: string }) {
     </div>
   );
 }
+
+/**
+ * Phase C: Priority contacts landing page (right pane when no contact is
+ * selected). Pulls top suggestions from the rule engine and renders the
+ * unique contacts behind them as 2-column cards. Picking one opens the
+ * full contact detail.
+ */
+function PriorityContactsLanding({ onPick }: { onPick: (c: Contact) => void }) {
+  const [items, setItems] = useState<{ contact: Contact; rationale: string; urgency: string; created_at?: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await aiApi.suggestTodos() as {
+          suggestions: { contact_id: number | null; rule_id: string; rationale: string; urgency: string }[];
+          generated_at?: string;
+        };
+        const suggestions = (data.suggestions || []).filter(s => s.contact_id != null);
+        // Take first occurrence per contact_id (engine already sorted by urgency)
+        const seen = new Set<number>();
+        const top: typeof suggestions = [];
+        for (const s of suggestions) {
+          const cid = s.contact_id as number;
+          if (seen.has(cid)) continue;
+          seen.add(cid);
+          top.push(s);
+          if (top.length >= 10) break;
+        }
+        // Bulk-load contact rows. We hit /api/contacts/{id} per contact —
+        // 10 round-trips is fine for a landing page.
+        const contacts: typeof items = [];
+        for (const s of top) {
+          try {
+            const c = await contactsApi.get(s.contact_id as number) as Contact;
+            contacts.push({
+              contact: c,
+              rationale: s.rationale,
+              urgency: s.urgency,
+              created_at: data.generated_at,
+            });
+          } catch { /* skip if missing */ }
+        }
+        if (alive) setItems(contacts);
+      } catch { /* silent */ }
+      finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="p-6">
+      <h2
+        className="font-display font-bold mb-1"
+        style={{ fontSize: 24, color: "var(--text-primary)" }}
+      >
+        Priority contacts
+      </h2>
+      <p className="text-sm mb-5" style={{ color: "var(--text-secondary)" }}>
+        Top {items.length} contacts that need your attention — click to view details
+      </p>
+      {loading ? (
+        <p className="text-sm" style={{ color: "var(--text-muted)" }}>Loading priority contacts…</p>
+      ) : items.length === 0 ? (
+        <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+          No priority contacts right now. Pick one from the left to view details.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {items.map(({ contact, rationale, urgency }) => (
+            <button
+              key={contact.id}
+              onClick={() => onPick(contact)}
+              className="text-left rounded-xl p-4 transition-shadow hover:shadow-sm bg-white"
+              style={{ border: "1px solid var(--border-faint)" }}
+            >
+              <div className="flex items-start gap-3">
+                <Avatar contact={contact} size={36} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm" style={{ color: "var(--text-primary)" }}>
+                    {contact.first_name} {contact.last_name}
+                  </p>
+                  {contact.company_name && (
+                    <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+                      {contact.company_name}
+                    </p>
+                  )}
+                  <p
+                    className="text-xs mt-1.5 line-clamp-2"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
+                    {rationale}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    {contact.lead_status && contact.lead_status !== "new" && (
+                      <StatusBadge status={contact.lead_status} />
+                    )}
+                    <span
+                      className="rounded-full"
+                      style={{
+                        background:
+                          urgency === "high" ? "var(--brand-red-soft)" :
+                          urgency === "medium" ? "var(--brand-amber-soft)" :
+                          "var(--bg-app)",
+                        color:
+                          urgency === "high" ? "var(--brand-red)" :
+                          urgency === "medium" ? "var(--brand-amber-dark)" :
+                          "var(--text-muted)",
+                        padding: "1px 8px",
+                        fontSize: 10,
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.4,
+                      }}
+                    >
+                      {urgency}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Phase C: per-contact Suggestions panel at the bottom of the detail view.
+ * Filters the global rule engine output to only this contact_id; renders
+ * each suggestion with a Log Action / Snooze button row.
+ */
+function ContactSuggestions({
+  contactId, onLogAction,
+}: { contactId: number; onLogAction: () => void }) {
+  const [items, setItems] = useState<{ rule_id: string; rationale: string; urgency: string; suggested_action: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const data = await aiApi.suggestTodos() as {
+          suggestions: { rule_id: string; contact_id: number | null; rationale: string; urgency: string; suggested_action: string }[];
+        };
+        const filtered = (data.suggestions || []).filter(s => s.contact_id === contactId);
+        if (alive) setItems(filtered);
+      } catch { /* silent */ }
+      finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [contactId]);
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle
+          className="font-display font-bold"
+          style={{ fontSize: 18, color: "var(--text-primary)" }}
+        >
+          Suggestions
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm italic" style={{ color: "var(--text-muted)" }}>
+            No suggestions right now — log activity to seed new ones.
+          </p>
+        ) : (
+          <ul className="space-y-2.5">
+            {items.map((s) => (
+              <li
+                key={s.rule_id}
+                className="rounded-lg p-3"
+                style={{ background: "var(--bg-app)" }}
+              >
+                <p className="text-sm" style={{ color: "var(--text-primary)" }}>
+                  {s.rationale}
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={onLogAction}
+                    className="text-[12px] px-3 py-1 rounded-full text-white"
+                    style={{ background: "var(--brand-blue)" }}
+                  >
+                    Log Action
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await tasksApi.snoozeSuggestion({
+                          rule_id: s.rule_id,
+                          contact_id: contactId,
+                          days: 7,
+                        });
+                        setItems(prev => prev.filter(x => x.rule_id !== s.rule_id));
+                      } catch { /* silent */ }
+                    }}
+                    className="text-[12px] px-3 py-1 rounded-full border"
+                    style={{
+                      background: "var(--bg-card)",
+                      color: "var(--text-secondary)",
+                      borderColor: "var(--border-strong)",
+                    }}
+                  >
+                    Snooze 7d
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 
 // Wrap in <Suspense> — useSearchParams() requires it per Next.js 16
 // prerender rules. Without this, `npm run build` fails for this route.

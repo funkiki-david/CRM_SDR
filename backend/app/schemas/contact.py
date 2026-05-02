@@ -150,6 +150,11 @@ class ContactResponse(BaseModel):
     assigned_to: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    # Phase C: latest LeadStatus value for the contact's most-recent lead.
+    # Optional because many contacts have no associated lead. Computed
+    # server-side via lateral join in list_contacts; populated in Python
+    # for single-contact reads.
+    lead_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

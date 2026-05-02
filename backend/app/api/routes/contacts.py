@@ -120,7 +120,29 @@ async def list_contacts(
     result = await db.execute(query)
     contacts = result.scalars().all()
 
-    return ContactListResponse(contacts=contacts, total=total)
+    # Phase C: bulk-load most-recent lead.status for each contact in this
+    # page. One round-trip — we DON'T do a per-row sub-select.
+    from app.models.lead import Lead
+    contact_ids = [c.id for c in contacts]
+    lead_status_map: dict[int, str] = {}
+    if contact_ids:
+        lead_q = await db.execute(
+            select(Lead.contact_id, Lead.status, Lead.updated_at)
+            .where(Lead.contact_id.in_(contact_ids))
+            .order_by(Lead.contact_id, Lead.updated_at.desc())
+        )
+        for cid, status_val, _updated in lead_q.all():
+            # First row per cid wins (we ordered desc on updated_at).
+            if cid not in lead_status_map:
+                lead_status_map[cid] = status_val.value if hasattr(status_val, "value") else status_val
+
+    serialized = []
+    for c in contacts:
+        item = ContactResponse.model_validate(c)
+        item.lead_status = lead_status_map.get(c.id)
+        serialized.append(item)
+
+    return ContactListResponse(contacts=serialized, total=total)
 
 
 @router.get("/check-email")
