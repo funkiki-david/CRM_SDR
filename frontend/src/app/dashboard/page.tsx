@@ -13,7 +13,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/app-shell";
-import AddContact from "@/components/add-contact";
 import QuickEntry from "@/components/quick-entry";
 import EmailCompose from "@/components/email-compose";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +25,7 @@ import { useAIBudget } from "@/components/ai-budget";
 // ==================== Types ====================
 
 interface FollowUp {
-  lead_id: number;
+  lead_id: number | string;     // backend may emit "task-N" for task rows
   contact_id: number;
   contact_name: string;
   contact_email: string | null;
@@ -34,17 +33,22 @@ interface FollowUp {
   company: string | null;
   title: string | null;
   urgency: "overdue" | "today" | "upcoming";
-  follow_up_date: string;
+  // Backend returns the lead's current LeadStatus value (e.g. "new",
+  // "contacted", "interested", "meeting_set", "proposal", "closed_won",
+  // "closed_lost") — used by Phase B for the status-grouped follow-ups.
+  lead_status: string;
+  follow_up_date: string | null;
   follow_up_reason: string | null;
   last_activity_date: string | null;
   last_activity_type: string | null;
   last_activity_summary: string | null;
   last_activity_content: string | null;
   days_since_last_contact: number | null;
-  owner_name: string;
+  owner_name: string | null;
 }
 
 interface FollowUpsResponse {
+  follow_ups?: FollowUp[];  // backend's flat list — used by status grouping
   grouped: { overdue: FollowUp[]; today: FollowUp[]; upcoming: FollowUp[] };
   counts: { overdue: number; today: number; upcoming: number };
   total: number;
@@ -134,7 +138,6 @@ export default function DashboardPage() {
   const [loadingFollowUps, setLoadingFollowUps] = useState(true);
 
   // Compose dialogs
-  const [addContactOpen, setAddContactOpen] = useState(false);
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const [emailComposeOpen, setEmailComposeOpen] = useState(false);
   const [emailContext, setEmailContext] = useState<{ id: number; name: string; email: string | null }>({
@@ -164,24 +167,43 @@ export default function DashboardPage() {
     setEmailComposeOpen(true);
   };
 
+  // Phase B: dynamic greeting + subtitle
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const firstName = currentUserName ? currentUserName.split(" ")[0] : "there";
+  const today = now.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  const overdueCount = followUps?.counts?.overdue ?? 0;
+
   return (
     <AppShell>
-      <div className="max-w-7xl mx-auto px-6 py-6 space-y-6">
-        {/* === Welcome header === */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
-            {currentUserName && (
-              <p className="text-sm text-slate-500 mt-0.5">Welcome back, {currentUserName.split(" ")[0]}</p>
+      <div className="max-w-7xl mx-auto px-6 py-6 space-y-5">
+        {/* === Greeting header (Phase B) === */}
+        <div>
+          <h1
+            className="font-display font-bold text-slate-900"
+            style={{ fontSize: 32, lineHeight: 1.15 }}
+          >
+            {greeting}, {firstName}
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+            {today}
+            {overdueCount > 0 && (
+              <>
+                {" — You have "}
+                <span style={{ color: "var(--brand-red)", fontWeight: 600 }}>
+                  {overdueCount} overdue follow-up{overdueCount === 1 ? "" : "s"}
+                </span>
+              </>
             )}
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setAddContactOpen(true)}>+ Contact</Button>
-            <Button size="sm" variant="outline" onClick={() => setQuickEntryOpen(true)}>✎ Log</Button>
-          </div>
+          </p>
         </div>
 
-        {/* === Quick Stats === */}
+        {/* === Inline stat chips (Phase B) === */}
         <QuickStatsRow stats={stats} />
 
         {/* === 60 / 40 two-column === */}
@@ -204,12 +226,10 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick action dialogs */}
-      <AddContact
-        open={addContactOpen}
-        onClose={() => setAddContactOpen(false)}
-        onSuccess={() => { setAddContactOpen(false); loadFollowUps(); }}
-      />
+      {/* Quick action dialogs.
+          (AddContact dialog removed in Phase B — the +Contact button was
+          deleted from the dashboard header. AddContact still ships in
+          /contacts/page.tsx where it belongs.) */}
       <QuickEntry
         open={quickEntryOpen}
         onClose={() => setQuickEntryOpen(false)}
@@ -229,71 +249,117 @@ export default function DashboardPage() {
 
 // ==================== StatCard + Quick Stats Row ====================
 
-function StatCard({ icon, label, value }: { icon: string; label: string; value: number | string }) {
+// Phase B: stat row collapsed from 5 big cards to inline pill chips.
+// No icons (emoji or otherwise) — pure typography. Big number in Fraunces,
+// label in DM Sans.
+
+function StatChip({ value, label, valueColor }: {
+  value: number | string;
+  label: string;
+  valueColor?: string;
+}) {
   return (
-    <div className="p-5 bg-white rounded-lg shadow-sm border border-slate-100">
-      <div className="flex items-center gap-2 text-sm text-slate-500 mb-1.5">
-        <span className="text-base">{icon}</span>
-        <span>{label}</span>
-      </div>
-      <p className="text-3xl font-bold text-slate-900">{value}</p>
+    <div
+      className="inline-flex items-baseline gap-1.5 rounded-full"
+      style={{
+        background: "var(--bg-card)",
+        border: "1px solid var(--border-faint)",
+        padding: "6px 14px",
+        fontSize: 13,
+        color: "var(--text-secondary)",
+      }}
+    >
+      <strong
+        className="font-display"
+        style={{
+          fontSize: 15,
+          fontWeight: 700,
+          color: valueColor ?? "var(--text-primary)",
+        }}
+      >
+        {value}
+      </strong>
+      <span>{label}</span>
     </div>
   );
 }
 
-function AIBudgetStatCard() {
+function AIBudgetChip() {
   const { usage } = useAIBudget();
-  if (!usage) {
-    return <StatCard icon="🤖" label="AI Budget" value="—" />;
-  }
-  if (usage.unlimited) {
-    return (
-      <div className="p-5 bg-white rounded-lg shadow-sm border border-slate-100">
-        <div className="flex items-center gap-2 text-sm text-slate-500 mb-1.5">
-          <span className="text-base">🤖</span>
-          <span>AI Budget</span>
-        </div>
-        <p className="text-2xl font-bold text-slate-900">Unlimited</p>
-        <p className="text-xs text-slate-400 mt-0.5">${usage.spent_today.toFixed(2)} today</p>
-      </div>
-    );
-  }
-  // At-limit states use red (warning color); otherwise pure slate per design.
-  const amountClass = usage.at_limit ? "text-red-500" : "text-slate-900";
+  if (!usage) return <StatChip value="—" label="AI budget" />;
+  if (usage.unlimited) return <StatChip value="∞" label="AI budget" />;
+  const colour = usage.at_limit ? "var(--brand-red)" : undefined;
   return (
-    <div className="p-5 bg-white rounded-lg shadow-sm border border-slate-100">
-      <div className="flex items-center gap-2 text-sm text-slate-500 mb-1.5">
-        <span className="text-base">🤖</span>
-        <span>AI Budget</span>
-      </div>
-      <p className={`text-2xl font-bold ${amountClass}`}>
-        ${usage.spent_today.toFixed(2)}
-        <span className="text-slate-400 text-base font-normal"> / ${(usage.daily_limit ?? 0).toFixed(2)}</span>
-      </p>
-      <p className="text-xs text-slate-400 mt-0.5">today</p>
-    </div>
+    <StatChip
+      value={`$${usage.spent_today.toFixed(2)}`}
+      label={`/ $${(usage.daily_limit ?? 0).toFixed(2)} AI budget`}
+      valueColor={colour}
+    />
   );
 }
 
 function QuickStatsRow({ stats }: { stats: QuickStats | null }) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-      <StatCard icon="📊" label="Total Contacts" value={stats?.total_contacts ?? "—"} />
-      <StatCard icon="📧" label="Emails Today" value={stats?.emails_today ?? "—"} />
-      <StatCard icon="📞" label="Calls Today" value={stats?.calls_today ?? "—"} />
-      <StatCard icon="🤝" label="Meetings This Week" value={stats?.meetings_this_week ?? "—"} />
-      <AIBudgetStatCard />
+    <div className="flex flex-wrap gap-1.5">
+      <StatChip value={stats?.total_contacts ?? "—"} label="contacts" />
+      <StatChip value={stats?.emails_today ?? 0} label="emails today" />
+      <StatChip value={stats?.calls_today ?? 0} label="calls today" />
+      <StatChip value={stats?.meetings_this_week ?? 0} label="meetings this week" />
+      <AIBudgetChip />
     </div>
   );
 }
 
-// ==================== Follow-Ups Needed ====================
+// ==================== Follow-Ups Needed (Phase B redesign) ====================
+//
+// Two grouping axes per the mockup spec:
+//   - Time:    Overdue / Due today / This week / Coming up
+//   - Status:  Waiting on reply / Sample sent / Hot leads / Price negotiation
+// Time groups come from backend's `grouped.{overdue,today,upcoming}` field;
+// "Coming up" is reserved for ≥ 8 days out (none in current backend output,
+// so it stays empty until backend adds it). Status groups bucket the FLAT
+// list by `lead_status` mapping below.
+//
+// Default expansion: only Overdue → top 3. Other groups collapsed.
 
-const URGENCY_STYLES: Record<string, { border: string; dot: string; label: string }> = {
-  overdue: { border: "border-l-red-500", dot: "🔴", label: "Overdue" },
-  today: { border: "border-l-slate-300", dot: "🟡", label: "Due Today" },
-  upcoming: { border: "border-l-slate-300", dot: "🔵", label: "Upcoming This Week" },
-};
+interface TimeGroupStyle {
+  key: "overdue" | "today" | "this_week" | "coming_up";
+  label: string;
+  stripe: string;       // 3px coloured stripe
+  badgeBg: string;
+  badgeFg: string;
+}
+
+const TIME_GROUPS: TimeGroupStyle[] = [
+  { key: "overdue",   label: "Overdue",     stripe: "var(--brand-red)",   badgeBg: "var(--brand-red-soft)",   badgeFg: "var(--brand-red)" },
+  { key: "today",     label: "Due today",   stripe: "var(--brand-amber)", badgeBg: "var(--brand-amber-soft)", badgeFg: "var(--brand-amber-dark)" },
+  { key: "this_week", label: "This week",   stripe: "var(--brand-blue)",  badgeBg: "var(--brand-blue-soft)",  badgeFg: "var(--brand-blue)" },
+  { key: "coming_up", label: "Coming up",   stripe: "var(--brand-green)", badgeBg: "var(--brand-green-soft)", badgeFg: "var(--brand-green)" },
+];
+
+interface StatusGroupStyle {
+  key: string;          // backend lead_status value
+  label: string;
+  stripe: string;
+  badgeBg: string;
+  badgeFg: string;
+}
+
+// Mapping current 7-value LeadStatus → 4 mockup buckets (loose, will tighten
+// after the activity-status dropdown produces real distribution data):
+//   contacted    → Waiting on reply (we sent something, awaiting a reply)
+//   interested   → Sample sent / engaged
+//   meeting_set  → Hot leads (close to closing)
+//   proposal     → Price negotiation
+//
+// Leads in NEW are intentionally excluded from the status section — they
+// live in the "no contact yet" bucket at the top via stage_new_stuck_7d.
+const STATUS_GROUPS: StatusGroupStyle[] = [
+  { key: "contacted",   label: "Waiting on reply",     stripe: "var(--brand-amber)", badgeBg: "var(--brand-amber-soft)", badgeFg: "var(--brand-amber-dark)" },
+  { key: "interested",  label: "Sample sent",          stripe: "var(--brand-blue)",  badgeBg: "var(--brand-blue-soft)",  badgeFg: "var(--brand-blue)" },
+  { key: "meeting_set", label: "Hot leads",            stripe: "var(--brand-red)",   badgeBg: "var(--brand-red-soft)",   badgeFg: "var(--brand-red)" },
+  { key: "proposal",    label: "Price negotiation",    stripe: "var(--brand-green)", badgeBg: "var(--brand-green-soft)", badgeFg: "var(--brand-green)" },
+];
 
 function FollowUpsSection({
   loading, data, onRefresh, onEmail,
@@ -303,8 +369,11 @@ function FollowUpsSection({
   onRefresh: () => void;
   onEmail: (fu: FollowUp) => void;
 }) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ overdue: false, today: false, upcoming: false });
+  // Expansion state: per-group key. Default is only "overdue" expanded
+  // (with top 3 visible — `INITIAL_TOP=3` below).
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ overdue: true });
   const [search, setSearch] = useState("");
+  const INITIAL_TOP = 3;
 
   if (loading) {
     return (
@@ -323,7 +392,7 @@ function FollowUpsSection({
     );
   }
 
-  // Problem 4: client-side filter on contact name / company / activity note
+  // Client-side text filter on contact name / company / activity content
   const filterFn = (f: FollowUp): boolean => {
     if (!search.trim()) return true;
     const term = search.trim().toLowerCase();
@@ -335,92 +404,204 @@ function FollowUpsSection({
       (f.follow_up_reason || "").toLowerCase().includes(term)
     );
   };
-  const sections: Array<{ key: "overdue" | "today" | "upcoming"; items: FollowUp[] }> = [
-    { key: "overdue", items: (data?.grouped.overdue ?? []).filter(filterFn) },
-    { key: "today", items: (data?.grouped.today ?? []).filter(filterFn) },
-    { key: "upcoming", items: (data?.grouped.upcoming ?? []).filter(filterFn) },
-  ];
+
+  // Bucket time groups (overdue/today/upcoming come from backend; "coming_up"
+  // is empty until backend exposes a 7+ day bucket).
+  const flat: FollowUp[] = (data?.follow_ups ?? []).filter(filterFn);
+  const timeBuckets: Record<string, FollowUp[]> = {
+    overdue:   (data?.grouped.overdue ?? []).filter(filterFn),
+    today:     (data?.grouped.today ?? []).filter(filterFn),
+    this_week: (data?.grouped.upcoming ?? []).filter(filterFn),
+    coming_up: [],
+  };
+
+  // Status buckets (cross-cuts the time groups — same row may appear once
+  // here too if its lead_status maps to one of the 4 status groups).
+  const statusBuckets: Record<string, FollowUp[]> = {};
+  for (const sg of STATUS_GROUPS) statusBuckets[sg.key] = [];
+  for (const f of flat) {
+    if (statusBuckets[f.lead_status]) statusBuckets[f.lead_status].push(f);
+  }
+
   const searchActive = search.trim().length > 0;
-  // Problem 4: when >10 in a section, collapse to 10 unless expanded or searching
-  const VISIBLE_LIMIT = 10;
-  const shownTotal = sections.reduce((n, s) => n + s.items.length, 0);
+  const shownTotal = flat.length;
 
   return (
     <section>
-      <div className="flex items-center gap-3 mb-3 flex-wrap">
-        <h2 className="text-lg font-semibold text-slate-900">Follow-Ups Needed</h2>
-        <span className="bg-slate-100 text-slate-700 rounded-full px-2 text-sm font-semibold">{shownTotal}</span>
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <h2
+          className="font-display font-bold text-slate-900"
+          style={{ fontSize: 22 }}
+        >
+          Follow-ups
+        </h2>
+        <span
+          className="rounded-full"
+          style={{
+            background: "var(--brand-red-soft)",
+            color: "var(--brand-red)",
+            padding: "2px 10px",
+            fontSize: 12,
+            fontWeight: 600,
+          }}
+        >
+          {shownTotal} needed
+        </span>
         <div className="relative flex-1 min-w-[180px]">
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name, company, or note..."
-            className="h-8 text-xs bg-white border border-slate-200 rounded-md pr-7"
+            className="h-8 text-xs pr-7"
           />
           {search && (
             <button
               onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs"
               aria-label="Clear search"
             >
-              ✕
+              ×
             </button>
           )}
         </div>
       </div>
 
-      <div className="space-y-5">
-        {sections.map(({ key, items }) => {
-          if (items.length === 0) return null;
-          const style = URGENCY_STYLES[key];
-          const isExpanded = expanded[key] || searchActive;
-          const shown = isExpanded ? items : items.slice(0, VISIBLE_LIMIT);
-          return (
-            <div key={key}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-slate-700">
-                  <span className="mr-1">{style.dot}</span>
-                  {style.label} <span className="text-slate-400">({items.length})</span>
-                </p>
-                {!searchActive && items.length > VISIBLE_LIMIT && (
-                  <button
-                    onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
-                    className="text-xs text-slate-600 hover:text-slate-900 hover:underline"
-                  >
-                    {isExpanded ? "Show Less" : `Show all (${items.length})`}
-                  </button>
-                )}
-              </div>
-              <div className="space-y-2">
-                {shown.map(item => (
-                  <FollowUpCard
-                    key={item.lead_id}
-                    fu={item}
-                    borderClass={style.border}
-                    onEmail={onEmail}
-                    onRefresh={onRefresh}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-        {searchActive && shownTotal === 0 && (
-          <p className="text-sm text-slate-400 text-center py-4">
-            No follow-ups match &ldquo;{search}&rdquo;.
-          </p>
-        )}
-      </div>
+      {searchActive && shownTotal === 0 ? (
+        <p className="text-sm text-slate-400 text-center py-6">
+          No follow-ups match &ldquo;{search}&rdquo;.
+        </p>
+      ) : (
+        <>
+          {/* === Top: time-based groups === */}
+          <div className="space-y-3 mb-5">
+            {TIME_GROUPS.map((g) => (
+              <FollowUpGroup
+                key={g.key}
+                groupKey={g.key}
+                label={g.label}
+                stripe={g.stripe}
+                badgeBg={g.badgeBg}
+                badgeFg={g.badgeFg}
+                items={timeBuckets[g.key]}
+                expanded={Boolean(expanded[g.key]) || searchActive}
+                onToggle={() =>
+                  setExpanded((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
+                }
+                initialTop={INITIAL_TOP}
+                onEmail={onEmail}
+                onRefresh={onRefresh}
+              />
+            ))}
+          </div>
+
+          {/* Divider between time + status views */}
+          <div
+            className="my-5"
+            style={{ borderTop: "1px solid var(--border-faint)" }}
+          />
+
+          {/* === Bottom: status-based groups === */}
+          <div className="space-y-3">
+            {STATUS_GROUPS.map((g) => (
+              <FollowUpGroup
+                key={g.key}
+                groupKey={g.key}
+                label={g.label}
+                stripe={g.stripe}
+                badgeBg={g.badgeBg}
+                badgeFg={g.badgeFg}
+                items={statusBuckets[g.key]}
+                expanded={Boolean(expanded[g.key]) || searchActive}
+                onToggle={() =>
+                  setExpanded((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
+                }
+                initialTop={INITIAL_TOP}
+                onEmail={onEmail}
+                onRefresh={onRefresh}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </section>
   );
 }
 
+function FollowUpGroup({
+  label, stripe, badgeBg, badgeFg, items, expanded, onToggle, initialTop, onEmail, onRefresh,
+}: {
+  groupKey: string;
+  label: string;
+  stripe: string;
+  badgeBg: string;
+  badgeFg: string;
+  items: FollowUp[];
+  expanded: boolean;
+  onToggle: () => void;
+  initialTop: number;
+  onEmail: (fu: FollowUp) => void;
+  onRefresh: () => void;
+}) {
+  if (items.length === 0) return null;
+  const shown = expanded ? items : items.slice(0, initialTop);
+  const hasMore = items.length > initialTop;
+
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between py-1.5 hover:opacity-80 transition-opacity"
+      >
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: 11 }}>{expanded ? "▼" : "▶"}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+            {label}
+          </span>
+          <span
+            className="rounded-full"
+            style={{
+              background: badgeBg,
+              color: badgeFg,
+              padding: "1px 8px",
+              fontSize: 11,
+              fontWeight: 600,
+            }}
+          >
+            {items.length}
+          </span>
+        </div>
+      </button>
+      {expanded && (
+        <div className="space-y-2 mt-2">
+          {shown.map((item) => (
+            <FollowUpCard
+              key={item.lead_id}
+              fu={item}
+              stripeColor={stripe}
+              onEmail={onEmail}
+              onRefresh={onRefresh}
+            />
+          ))}
+          {!expanded && hasMore && (
+            <p className="text-xs text-slate-400 pl-4">
+              + {items.length - initialTop} more — click header to expand
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Phase B: 2-button card. Coloured stripe taken from caller (group axis
+// determines colour). No emoji. Log Action opens QuickEntry preselected
+// to this contact; Snooze pushes the lead's next_follow_up forward.
 function FollowUpCard({
-  fu, borderClass, onEmail, onRefresh,
+  fu, stripeColor, onRefresh,
 }: {
   fu: FollowUp;
-  borderClass: string;
-  onEmail: (fu: FollowUp) => void;
+  stripeColor: string;
+  onEmail: (fu: FollowUp) => void;  // kept for prop compat; unused now
   onRefresh: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -430,22 +611,14 @@ function FollowUpCard({
     setBusy(true);
     setSnoozeMenu(false);
     try {
-      await dashboardApi.snoozeFollowUp(fu.lead_id, days);
+      // task-derived rows have non-numeric lead_id ("task-N"); skip snooze
+      // for now since the backend snooze endpoint only handles real leads.
+      if (typeof fu.lead_id === "number") {
+        await dashboardApi.snoozeFollowUp(fu.lead_id, days);
+      }
       onRefresh();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Snooze failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDone = async () => {
-    setBusy(true);
-    try {
-      await dashboardApi.completeFollowUp(fu.lead_id);
-      onRefresh();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed");
     } finally {
       setBusy(false);
     }
@@ -457,70 +630,89 @@ function FollowUpCard({
 
   const noteLine = fu.last_activity_content || fu.last_activity_summary || fu.follow_up_reason;
 
-  const actionBtn = "text-[11px] px-2 py-0.5 bg-slate-50 text-slate-700 border border-slate-200 rounded hover:bg-slate-100 transition-colors";
+  const pillBtn = "text-[12px] px-3 py-1 rounded-full border transition-colors";
+
   return (
-    <Card className={`border border-slate-200 border-l-4 ${borderClass} hover:shadow-sm transition-shadow`}>
-      <CardContent className="py-3 px-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
+    <div
+      className="bg-white rounded-xl overflow-hidden hover:shadow-sm transition-shadow"
+      style={{ border: "1px solid var(--border-faint)" }}
+    >
+      <div className="flex">
+        {/* 3px coloured left stripe */}
+        <div style={{ width: 3, background: stripeColor, flexShrink: 0 }} />
+        <div className="px-4 py-3 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <Link
+                href={`/contacts?id=${fu.contact_id}`}
+                className="font-medium text-[14px] hover:underline"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {fu.contact_name}
+              </Link>
+              {fu.company && (
+                <span className="text-[14px] ml-1" style={{ color: "var(--text-secondary)" }}>
+                  · {fu.company}
+                </span>
+              )}
+              <p className="text-[12px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                {lastContactLine}
+              </p>
+              {noteLine && (
+                <p
+                  className="text-[12px] mt-1 italic line-clamp-2"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  &ldquo;{noteLine}&rdquo;
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* 2-button action row: Log Action / Snooze */}
+          <div
+            className="flex items-center gap-2 mt-2.5 pt-2.5"
+            style={{ borderTop: "1px solid var(--border-faint)" }}
+          >
             <Link
               href={`/contacts?id=${fu.contact_id}`}
-              className="font-medium text-sm text-slate-900 hover:underline"
+              className={pillBtn}
+              style={{
+                background: "var(--brand-blue)",
+                color: "#fff",
+                borderColor: "var(--brand-blue)",
+              }}
             >
-              {fu.contact_name}
+              Log Action
             </Link>
-            {fu.company && <span className="text-sm text-slate-500 ml-1">· {fu.company}</span>}
-            <p className="text-xs text-slate-500 mt-0.5">{lastContactLine}</p>
-            {noteLine && (
-              <p className="text-xs text-slate-600 mt-1 italic line-clamp-2">&ldquo;{noteLine}&rdquo;</p>
-            )}
+            <div className="relative">
+              <button
+                onClick={() => setSnoozeMenu((v) => !v)}
+                disabled={busy}
+                className={pillBtn}
+                style={{
+                  background: "var(--bg-card)",
+                  color: "var(--text-secondary)",
+                  borderColor: "var(--border-strong)",
+                }}
+              >
+                Snooze
+              </button>
+              {snoozeMenu && (
+                <div
+                  className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg z-10 text-[12px] min-w-[120px] overflow-hidden"
+                  style={{ border: "1px solid var(--border-strong)" }}
+                >
+                  <button onClick={() => handleSnooze(1)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 day</button>
+                  <button onClick={() => handleSnooze(3)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 3 days</button>
+                  <button onClick={() => handleSnooze(7)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 week</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-
-        <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-100">
-          {fu.contact_phone && (
-            <a
-              href={`tel:${fu.contact_phone}`}
-              className={actionBtn}
-            >
-              📞 Call
-            </a>
-          )}
-          {fu.contact_email && (
-            <button
-              disabled
-              title="Coming soon — please send emails from your Gmail directly"
-              className="text-[11px] px-2 py-0.5 bg-slate-100 text-slate-400 border border-slate-200 rounded cursor-not-allowed"
-            >
-              📧 Email
-            </button>
-          )}
-          <div className="relative">
-            <button
-              onClick={() => setSnoozeMenu(v => !v)}
-              disabled={busy}
-              className={actionBtn}
-            >
-              ⏰ Snooze
-            </button>
-            {snoozeMenu && (
-              <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded shadow-lg z-10 text-[11px] min-w-[120px]">
-                <button onClick={() => handleSnooze(1)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 day</button>
-                <button onClick={() => handleSnooze(3)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 3 days</button>
-                <button onClick={() => handleSnooze(7)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 week</button>
-              </div>
-            )}
-          </div>
-          <button
-            onClick={handleDone}
-            disabled={busy}
-            className={`${actionBtn} ml-auto`}
-          >
-            ✓ Done
-          </button>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -607,7 +799,12 @@ function ActivityFeedSection() {
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-slate-900">Activity Feed</h2>
+        <h2
+          className="font-display font-bold text-slate-900"
+          style={{ fontSize: 22 }}
+        >
+          Activity Feed
+        </h2>
         <span className="bg-slate-100 text-slate-700 rounded-full px-2 text-sm font-semibold">{total}</span>
       </div>
 
@@ -821,20 +1018,28 @@ function AISuggestionsSection() {
   return (
     <section>
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-lg font-semibold text-slate-900">🤖 AI Suggested To-Do</h2>
+        <h2
+          className="font-display font-bold text-slate-900"
+          style={{ fontSize: 22 }}
+        >
+          Suggested to-do
+        </h2>
         <Button
           size="sm"
           onClick={() => load(true)}
           disabled={loading}
-          className="text-xs h-7 bg-blue-600 hover:bg-blue-700 text-white"
+          className="text-[13px] h-8 px-4 text-white"
+          style={{ background: "var(--brand-navy)" }}
         >
-          {loading ? "Generating..." : "Generate"}
+          {loading ? "Refreshing..." : "Refresh"}
         </Button>
       </div>
-      <p className="text-xs text-slate-500 mb-3">
-        Based on team's last 30 days of activity
+      <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
+        Top {visible.length} of {suggestions.length} based on team's last 30 days of activity
         {generatedAt && !loading && (
-          <span className="ml-2 text-slate-400">· Last updated: {timeAgo(generatedAt)}</span>
+          <span className="ml-2" style={{ color: "var(--text-muted)" }}>
+            · Last updated: {timeAgo(generatedAt)}
+          </span>
         )}
       </p>
 
@@ -846,7 +1051,7 @@ function AISuggestionsSection() {
         <Card>
           <CardContent className="py-6 text-center text-sm text-slate-400">
             {suggestions.length > 0
-              ? "All suggestions dismissed. Click Generate for new ones."
+              ? "All suggestions dismissed. Click Refresh for new ones."
               : message
                 ? message
                 : "No suggestions yet — start logging activities to get AI recommendations!"}
@@ -877,6 +1082,7 @@ function SuggestionCard({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [whyOpen, setWhyOpen] = useState(false);
+  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
 
   const stripe = URGENCY_STRIPE[s.urgency] || URGENCY_STRIPE.low;
   const categoryLabel = CATEGORY_LABEL[s.category] || s.category;
@@ -948,45 +1154,63 @@ function SuggestionCard({
 
           {error && <p className="text-xs text-red-500 mb-1">{error}</p>}
 
-          <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 flex-wrap">
+          {/* Phase B: 2-button action row, matches FollowUpCard pattern.
+              Log Action → navigates to the contact (then user clicks
+              + Log Action in nav). Snooze pops a 3-option menu. */}
+          <div
+            className="flex items-center gap-2 pt-2 mt-1 flex-wrap"
+            style={{ borderTop: "1px solid var(--border-faint)" }}
+          >
             {created ? (
-              <span className="text-[11px] px-2 py-1 text-slate-500">✓ Task created</span>
+              <span className="text-[12px] px-2 py-1" style={{ color: "var(--text-secondary)" }}>
+                Task created
+              </span>
+            ) : s.contact_id ? (
+              <Link
+                href={`/contacts?id=${s.contact_id}`}
+                className="text-[12px] px-3 py-1 rounded-full border text-white"
+                style={{
+                  background: "var(--brand-blue)",
+                  borderColor: "var(--brand-blue)",
+                }}
+              >
+                Log Action
+              </Link>
             ) : (
               <Button
                 size="sm"
                 onClick={createTask}
                 disabled={creating}
-                className="text-[11px] h-7 bg-blue-600 hover:bg-blue-700 text-white"
+                className="text-[12px] h-7 px-3 text-white"
+                style={{ background: "var(--brand-blue)" }}
               >
-                {creating ? "Creating..." : "+ Create Task"}
+                {creating ? "Creating..." : "Log Action"}
               </Button>
             )}
-            {/* 3 snooze buttons */}
-            <button
-              onClick={() => snoozeFor(1)}
-              className="text-[11px] px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded"
-            >
-              😴 1d
-            </button>
-            <button
-              onClick={() => snoozeFor(3)}
-              className="text-[11px] px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded"
-            >
-              3d
-            </button>
-            <button
-              onClick={() => snoozeFor(7)}
-              className="text-[11px] px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded"
-            >
-              7d
-            </button>
-            {/* Done = effectively forever (1 year) */}
-            <button
-              onClick={() => snoozeFor(365)}
-              className="text-[11px] text-slate-400 hover:text-slate-600 ml-auto"
-            >
-              ✓ Done
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setSnoozeMenuOpen((v) => !v)}
+                className="text-[12px] px-3 py-1 rounded-full border"
+                style={{
+                  background: "var(--bg-card)",
+                  color: "var(--text-secondary)",
+                  borderColor: "var(--border-strong)",
+                }}
+              >
+                Snooze
+              </button>
+              {snoozeMenuOpen && (
+                <div
+                  className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg z-10 text-[12px] min-w-[120px] overflow-hidden"
+                  style={{ border: "1px solid var(--border-strong)" }}
+                >
+                  <button onClick={() => snoozeFor(1)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 day</button>
+                  <button onClick={() => snoozeFor(3)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 3 days</button>
+                  <button onClick={() => snoozeFor(7)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 week</button>
+                  <button onClick={() => snoozeFor(365)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50" style={{ color: "var(--text-muted)" }}>Forever</button>
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </div>

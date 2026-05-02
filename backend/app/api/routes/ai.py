@@ -589,7 +589,8 @@ async def suggest_todos(
     _ = force  # kept for API compat with old frontend
     from app.services.ai_todo_engine import generate_todos_for_user
 
-    suggestions = await generate_todos_for_user(db, current_user, max_count=7)
+    # Phase B: bumped from 7 → 20 to match the redesigned dashboard panel.
+    suggestions = await generate_todos_for_user(db, current_user, max_count=20)
     return {
         "suggestions": [s.model_dump() for s in suggestions],
         "generated_at": datetime.now(timezone.utc).isoformat(),
