@@ -122,16 +122,27 @@ async def delete_task(
     await db.delete(t)
 
 
-# === AI Suggestion Snooze (Problem 5) ===
+# === AI Suggestion Snooze ===
+#
+# Hash format aligns with the rule engine: sha256("{rule_id}|{contact_id or ''}")[:32].
+# That way the same hash is used both for filtering (engine.fetch_active_snoozes)
+# and persisting (this endpoint).
+
 
 def hash_suggestion(title: str, action: str = "") -> str:
+    """Legacy hash — kept callable so any old client can still POST and the
+    write succeeds, but the engine no longer reads these hashes."""
     return hashlib.sha256(f"{title}|{action}".encode("utf-8")).hexdigest()[:32]
 
 
 class SnoozeCreate(BaseModel):
-    title: str
-    action: str = ""
-    days: int = 1  # 1 / 3 / 7
+    # New (preferred) shape — engine alignment
+    rule_id: Optional[str] = None
+    contact_id: Optional[int] = None
+    days: int = 1  # 1 / 3 / 7 / 365 (Done = forever-ish)
+    # Old shape — accepted for backward compat, hashes go to legacy fn above
+    title: Optional[str] = None
+    action: Optional[str] = None
 
 
 @router.post("/snooze-suggestion")
@@ -140,8 +151,20 @@ async def snooze_suggestion(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Hide an AI suggestion until the snooze date."""
-    h = hash_suggestion(data.title, data.action)
+    """Hide a suggestion (rule_id + contact_id) until the snooze date.
+
+    Body shapes accepted:
+      - {rule_id, contact_id, days}     ← new, engine-aligned
+      - {title, action, days}           ← legacy, retained but the engine
+                                          no longer matches against this hash
+    """
+    if data.rule_id is not None:
+        # Engine-aligned hash: sha256("{rule_id}|{contact_id or ''}")[:32]
+        from app.services.ai_todo_engine import suggestion_hash
+        h = suggestion_hash(data.rule_id, data.contact_id)
+    else:
+        h = hash_suggestion(data.title or "", data.action or "")
+
     until = datetime.now(timezone.utc) + timedelta(days=data.days)
     db.add(AISuggestionSnooze(
         user_id=current_user.id,
@@ -150,6 +173,27 @@ async def snooze_suggestion(
     ))
     await db.flush()
     return {"hash": h, "snooze_until": until.isoformat()}
+
+
+@router.get("/snooze-suggestion")
+async def list_active_snoozes(
+    active: bool = True,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return suggestion_hash list for the current user.
+
+    `active=true` (default) returns only snoozes whose `snooze_until > NOW()`.
+    The frontend uses this on dashboard mount to know which suggestions to
+    pre-filter without a round-trip per card.
+    """
+    q = select(AISuggestionSnooze.suggestion_hash).where(
+        AISuggestionSnooze.user_id == current_user.id
+    )
+    if active:
+        q = q.where(AISuggestionSnooze.snooze_until > datetime.now(timezone.utc))
+    res = await db.execute(q)
+    return {"hashes": [row[0] for row in res.all()]}
 
 
 def _serialize(t: Task, contact_name: Optional[str]) -> dict:

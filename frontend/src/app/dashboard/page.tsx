@@ -69,10 +69,11 @@ interface QuickStats {
 }
 
 interface AISuggestion {
-  priority: "HIGH" | "OPPORTUNITY" | "INSIGHT";
-  title: string;
-  reason: string;
-  action: string;
+  rule_id: string;
+  urgency: "high" | "medium" | "low";
+  category: "pacing" | "stage" | "data_health" | "relationship" | "discipline";
+  suggested_action: "call" | "email" | "linkedin" | "review";
+  rationale: string;
   contact_id?: number | null;
 }
 
@@ -728,37 +729,61 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
 }
 
 // ==================== AI Suggested To-Do ====================
+//
+// Engine-driven (CP3). Suggestions come from the rule engine, not Claude.
+// Snoozes live server-side in `ai_suggestion_snoozes`, keyed by the SHA-256
+// of "{rule_id}|{contact_id}". Frontend pre-fetches the active hash list
+// once on mount and filters in-memory; dismiss/snooze actions POST a new
+// row and immediately remove the card from view.
 
-const PRIORITY_STYLES: Record<string, { icon: string; label: string; color: string }> = {
-  // Red stays for HIGH but muted — bg-red-50 + text-red-700 per spec.
-  HIGH: { icon: "🔥", label: "HIGH PRIORITY", color: "bg-red-50 text-red-700 border border-red-200 rounded-full px-2 text-xs" },
-  OPPORTUNITY: { icon: "💡", label: "OPPORTUNITY", color: "bg-slate-50 text-slate-700 border border-slate-200 rounded-full px-2 text-xs" },
-  INSIGHT: { icon: "📊", label: "INSIGHT", color: "bg-slate-50 text-slate-700 border border-slate-200 rounded-full px-2 text-xs" },
+const URGENCY_STRIPE: Record<string, string> = {
+  high: "bg-red-500",
+  medium: "bg-amber-500",
+  low: "bg-slate-400",
 };
+
+const CATEGORY_LABEL: Record<string, string> = {
+  pacing: "Pacing",
+  stage: "Stage",
+  data_health: "Data",
+  relationship: "Relationship",
+  discipline: "Discipline",
+};
+
+/** Same hash function as backend's engine. Used to prefilter snoozed cards. */
+async function hashSuggestion(rule_id: string, contact_id: number | null | undefined): Promise<string> {
+  const payload = `${rule_id}|${contact_id ?? ""}`;
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
+}
 
 function AISuggestionsSection() {
   const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
+  const [snoozedHashes, setSnoozedHashes] = useState<Set<string>>(new Set());
+  const [hiddenHashes, setHiddenHashes] = useState<Set<string>>(new Set()); // optimistic UI
   const [message, setMessage] = useState<string | null>(null);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try {
-      const raw = localStorage.getItem("ai_todos_dismissed") || "[]";
-      return new Set(JSON.parse(raw));
-    } catch { return new Set(); }
-  });
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     setMessage(null);
     try {
-      const data = await aiApi.suggestTodos(force) as AISuggestionsResponse;
+      // Engine endpoint (CP3) + active snooze list, in parallel.
+      const [data, snoozeData] = await Promise.all([
+        aiApi.suggestTodos(force) as Promise<AISuggestionsResponse>,
+        tasksApi.snoozeSuggestionList() as Promise<{ hashes: string[] }>,
+      ]);
       setSuggestions(data.suggestions || []);
       if (data.message) setMessage(data.message);
       if (data.generated_at) setGeneratedAt(data.generated_at);
+      setSnoozedHashes(new Set(snoozeData?.hashes || []));
+      setHiddenHashes(new Set());  // reset optimistic hides on refresh
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load suggestions");
     } finally {
@@ -768,16 +793,30 @@ function AISuggestionsSection() {
 
   useEffect(() => { load(); }, [load]);
 
-  const dismiss = (title: string) => {
-    const next = new Set(dismissed);
-    next.add(title);
-    setDismissed(next);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("ai_todos_dismissed", JSON.stringify(Array.from(next)));
-    }
+  // Compute hashes for visibility filter once per suggestions/snooze update.
+  const [computedHashes, setComputedHashes] = useState<Map<AISuggestion, string>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const m = new Map<AISuggestion, string>();
+      for (const s of suggestions) {
+        m.set(s, await hashSuggestion(s.rule_id, s.contact_id ?? null));
+      }
+      if (!cancelled) setComputedHashes(m);
+    })();
+    return () => { cancelled = true; };
+  }, [suggestions]);
+
+  const onHide = (s: AISuggestion) => {
+    const h = computedHashes.get(s);
+    if (h) setHiddenHashes(prev => new Set([...prev, h]));
   };
 
-  const visible = suggestions.filter(s => !dismissed.has(s.title));
+  const visible = suggestions.filter(s => {
+    const h = computedHashes.get(s);
+    if (!h) return true;  // not yet hashed; show by default
+    return !snoozedHashes.has(h) && !hiddenHashes.has(h);
+  });
 
   return (
     <section>
@@ -815,12 +854,11 @@ function AISuggestionsSection() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {visible.map((s, i) => (
+          {visible.map((s) => (
             <SuggestionCard
-              key={i}
+              key={`${s.rule_id}-${s.contact_id ?? "global"}`}
               suggestion={s}
-              index={i}
-              onDismiss={() => dismiss(s.title)}
+              onHide={() => onHide(s)}
             />
           ))}
         </div>
@@ -830,27 +868,23 @@ function AISuggestionsSection() {
 }
 
 function SuggestionCard({
-  suggestion: s, index: i, onDismiss,
+  suggestion: s, onHide,
 }: {
   suggestion: AISuggestion;
-  index: number;
-  onDismiss: () => void;
+  onHide: () => void;
 }) {
-  const style = PRIORITY_STYLES[s.priority] || PRIORITY_STYLES.INSIGHT;
   const [created, setCreated] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
-  const [snoozed, setSnoozed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [whyOpen, setWhyOpen] = useState(false);
 
-  // Map AI's suggested action verb → task_type
-  const inferType = (action: string): "call" | "email" | "meeting" | "follow_up" => {
-    const a = action.toLowerCase();
-    if (a.includes("call") || a.includes("phone")) return "call";
-    if (a.includes("email") || a.includes("send") || a.includes("write")) return "email";
-    if (a.includes("meeting") || a.includes("meet ")) return "meeting";
-    return "follow_up";
-  };
+  const stripe = URGENCY_STRIPE[s.urgency] || URGENCY_STRIPE.low;
+  const categoryLabel = CATEGORY_LABEL[s.category] || s.category;
+
+  // Map engine's suggested_action → task_type for Create Task.
+  const taskType = (s.suggested_action === "linkedin" || s.suggested_action === "review")
+    ? "follow_up"
+    : s.suggested_action;
 
   const createTask = async () => {
     setCreating(true);
@@ -858,8 +892,8 @@ function SuggestionCard({
     try {
       await tasksApi.create({
         contact_id: s.contact_id ?? undefined,
-        task_type: inferType(s.action || ""),
-        description: s.action || s.title,
+        task_type: taskType,
+        description: s.rationale,
         source: "ai_suggestion",
       });
       setCreated(true);
@@ -870,71 +904,92 @@ function SuggestionCard({
     }
   };
 
-  const snooze = async (days: number) => {
-    setSnoozeMenuOpen(false);
+  const snoozeFor = async (days: number) => {
     try {
-      await tasksApi.snoozeSuggestion(s.title, s.action || "", days);
-      setSnoozed(true);
+      await tasksApi.snoozeSuggestion({
+        rule_id: s.rule_id,
+        contact_id: s.contact_id ?? null,
+        days,
+      });
+      onHide();  // optimistic remove from current view
     } catch (e) {
       setError(e instanceof Error ? e.message : "Snooze failed");
     }
   };
 
-  if (snoozed) return null;
-
   return (
-    <Card className={`border border-slate-200 transition-opacity ${created ? "opacity-60" : ""}`}>
-      <CardContent className="py-3 px-4">
-        <div className="flex items-center gap-2 mb-2">
-          <span className={`inline-flex items-center py-0 font-medium ${style.color}`}>
-            {style.icon} {i + 1}. {style.label}
-          </span>
-        </div>
-        <p className="text-sm font-medium text-slate-900 mb-1.5">{s.title}</p>
-        <p className="text-xs text-slate-600 mb-1.5">
-          <span className="font-medium">Reason:</span> {s.reason}
-        </p>
-        <p className="text-xs text-slate-700 mb-2">
-          <span className="font-medium">Suggested action:</span> {s.action}
-        </p>
-        {error && <p className="text-xs text-red-500 mb-1">{error}</p>}
-        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-          {created ? (
-            <span className="text-[11px] px-2 py-1 text-slate-500">✓ Task created</span>
-          ) : (
-            <Button
-              size="sm"
-              onClick={createTask}
-              disabled={creating}
-              className="text-[11px] h-7 bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {creating ? "Creating..." : "+ Create Task"}
-            </Button>
-          )}
-          <div className="relative">
-            <button
-              onClick={() => setSnoozeMenuOpen(v => !v)}
-              disabled={created}
-              className="text-[11px] px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded transition-colors disabled:opacity-50"
-            >
-              😴 Snooze
-            </button>
-            {snoozeMenuOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded shadow-lg z-10 text-[11px] min-w-[120px]">
-                <button onClick={() => snooze(1)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">Tomorrow</button>
-                <button onClick={() => snooze(3)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">In 3 days</button>
-                <button onClick={() => snooze(7)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">Next week</button>
-              </div>
-            )}
+    <Card className={`border border-slate-200 transition-opacity overflow-hidden ${created ? "opacity-60" : ""}`}>
+      <div className="flex">
+        {/* Urgency color stripe (left edge) */}
+        <div className={`${stripe} w-1 shrink-0`} />
+        <CardContent className="py-3 px-4 flex-1">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <p className="text-sm font-medium text-slate-900">
+              {s.rationale}
+            </p>
+            <span className="text-[10px] uppercase tracking-wide bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">
+              {categoryLabel}
+            </span>
           </div>
+
           <button
-            onClick={onDismiss}
-            className="text-[11px] text-slate-400 hover:text-slate-600 ml-auto"
+            onClick={() => setWhyOpen(v => !v)}
+            className="text-[11px] text-slate-400 hover:text-slate-600 mb-2"
           >
-            Dismiss
+            {whyOpen ? "▼" : "▶"} Why?
           </button>
-        </div>
-      </CardContent>
+          {whyOpen && (
+            <div className="text-[11px] text-slate-500 mb-2 bg-slate-50 rounded px-2 py-1.5">
+              <div>Rule: <code>{s.rule_id}</code></div>
+              <div>Action: {s.suggested_action}</div>
+              {s.contact_id && <div>Contact id: {s.contact_id}</div>}
+            </div>
+          )}
+
+          {error && <p className="text-xs text-red-500 mb-1">{error}</p>}
+
+          <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 flex-wrap">
+            {created ? (
+              <span className="text-[11px] px-2 py-1 text-slate-500">✓ Task created</span>
+            ) : (
+              <Button
+                size="sm"
+                onClick={createTask}
+                disabled={creating}
+                className="text-[11px] h-7 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {creating ? "Creating..." : "+ Create Task"}
+              </Button>
+            )}
+            {/* 3 snooze buttons */}
+            <button
+              onClick={() => snoozeFor(1)}
+              className="text-[11px] px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded"
+            >
+              😴 1d
+            </button>
+            <button
+              onClick={() => snoozeFor(3)}
+              className="text-[11px] px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded"
+            >
+              3d
+            </button>
+            <button
+              onClick={() => snoozeFor(7)}
+              className="text-[11px] px-2 py-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded"
+            >
+              7d
+            </button>
+            {/* Done = effectively forever (1 year) */}
+            <button
+              onClick={() => snoozeFor(365)}
+              className="text-[11px] text-slate-400 hover:text-slate-600 ml-auto"
+            >
+              ✓ Done
+            </button>
+          </div>
+        </CardContent>
+      </div>
     </Card>
   );
 }

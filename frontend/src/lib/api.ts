@@ -258,11 +258,32 @@ export const tasksApi = {
   delete: (id: number) =>
     request(`/api/tasks/${id}`, { method: "DELETE" }),
 
-  snoozeSuggestion: (title: string, action: string, days: number) =>
-    request("/api/tasks/snooze-suggestion", {
+  /**
+   * Snooze an AI suggestion. New (preferred) shape uses rule_id+contact_id;
+   * the old (title, action, days) signature still works server-side for
+   * backwards compat but is ignored by the engine's hash filter.
+   */
+  snoozeSuggestion: (
+    arg: { rule_id: string; contact_id: number | null; days: number } | string,
+    legacyAction?: string,
+    legacyDays?: number,
+  ) => {
+    if (typeof arg === "string") {
+      // Legacy call site: snoozeSuggestion(title, action, days)
+      return request("/api/tasks/snooze-suggestion", {
+        method: "POST",
+        body: JSON.stringify({ title: arg, action: legacyAction, days: legacyDays }),
+      });
+    }
+    return request("/api/tasks/snooze-suggestion", {
       method: "POST",
-      body: JSON.stringify({ title, action, days }),
-    }),
+      body: JSON.stringify(arg),
+    });
+  },
+
+  /** GET active suggestion snoozes for current user (returns {hashes: string[]}) */
+  snoozeSuggestionList: () =>
+    request("/api/tasks/snooze-suggestion?active=true"),
 };
 
 /**

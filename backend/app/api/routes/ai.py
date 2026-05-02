@@ -574,19 +574,39 @@ async def suggest_todos(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Team-wide AI suggestions based on last 30d activity.
+    Team-wide AI to-do suggestions, now driven by the rule engine
+    (backend/app/services/ai_todo_engine.py).
 
-    - 有缓存且 < 2h 且未 force → 返回缓存 + generated_at
-    - 否则调 Claude 生成，结果缓存 2h
-    - 空活动：立即返回 empty + 不缓存（下次还会检查）
+    Behaviour change vs. CP2 / earlier Claude impl:
+      * Pure rule output — no Claude call, no token spend
+      * Cap = 7 per user per call (engine-enforced)
+      * Snoozes filtered inside the engine
+      * Sort: urgency high < medium < low, tiebreak contact_id
+
+    The `force` query param is accepted for backward compat but no longer
+    has effect — rules are deterministic, not cached.
     """
-    # 1) Cache lookup
+    _ = force  # kept for API compat with old frontend
+    from app.services.ai_todo_engine import generate_todos_for_user
+
+    suggestions = await generate_todos_for_user(db, current_user, max_count=7)
+    return {
+        "suggestions": [s.model_dump() for s in suggestions],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "cached": False,
+    }
+
+
+# Legacy Claude-driven path retained below for reference / quick rollback.
+# Will be removed in CP4 once the rule engine is proven in real use.
+async def _legacy_suggest_todos_claude(
+    force: bool, db: AsyncSession, current_user: User
+):  # pragma: no cover — not called any more
     if not force:
         cached = _SUGGEST_CACHE.get(current_user.id)
         if cached:
             age = datetime.now(timezone.utc) - cached["generated_at"]
             if age < _SUGGEST_CACHE_TTL:
-                # Return as-is with freshly computed age
                 resp = dict(cached["data"])
                 resp["generated_at"] = cached["generated_at"].isoformat()
                 resp["cached"] = True
