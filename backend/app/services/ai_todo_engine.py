@@ -684,3 +684,167 @@ async def rule_data_collision_7d(
         for cid, _n in rows
     ]
     return await _decorate(db, out)
+
+
+# --- B. Stage rules (6) — using existing 7-value LeadStatus enum (v1.3) ---
+#
+# Spec § 3.B: a lead "sitting" too long in a status without any new activity
+# is a signal the SDR has stalled. We reuse `_latest_activity_per_contact`
+# (already loaded once per request) to avoid hitting Activity per lead.
+#
+# Note: pacing_quote_5d / pacing_quote_10d (§ 3.A) and stage_proposal_stuck_5d
+# (§ 3.B) overlap in trigger condition. Both fire as designed; the dashboard's
+# 7-slot cap handles the surplus. See CHECKPOINT-4B-REPORT for follow-up.
+
+
+def _make_stage(
+    contact_id: int,
+    rule_id: str,
+    urgency: Urgency,
+    action: SuggestedAction,
+    rationale_seed: str,
+) -> TodoSuggestion:
+    """Like _make but emits category='stage'."""
+    return TodoSuggestion(
+        rule_id=rule_id,
+        urgency=urgency,
+        category="stage",
+        suggested_action=action,
+        rationale=rationale_seed,
+        contact_id=contact_id,
+    )
+
+
+async def _stage_stuck_window(
+    db: AsyncSession,
+    user: User,
+    *,
+    target_status: LeadStatus,
+    min_days: int,
+    rule_id: str,
+    urgency: Urgency,
+    action: SuggestedAction,
+    phrase: str,
+) -> list[TodoSuggestion]:
+    """Generic 'lead in <status> + last activity older than min_days' rule.
+
+    Days are measured against the latest activity for the contact; if the
+    contact has no activities yet, the lead's own `created_at` is used as
+    a proxy (so a lead created and ignored never escapes the rule).
+    """
+    _ = user
+    cutoff = datetime.now(timezone.utc) - timedelta(days=min_days)
+
+    leads_q = await db.execute(
+        select(Lead).where(Lead.status == target_status)
+    )
+    leads = leads_q.scalars().all()
+    if not leads:
+        return []
+
+    latest = await _latest_activity_per_contact(db)
+    out: list[TodoSuggestion] = []
+    for lead in leads:
+        a = latest.get(lead.contact_id)
+        last_contact = a.created_at if a else lead.created_at
+        if last_contact >= cutoff:
+            continue
+        out.append(_make_stage(lead.contact_id, rule_id, urgency, action,
+                               f"{lead.contact_id} — {phrase}"))
+    return await _decorate(db, out)
+
+
+# 1. NEW status, untouched > 7d → first reach-out is overdue
+@register_rule("stage_new_stuck_7d", "stage")
+async def rule_stage_new_stuck_7d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    return await _stage_stuck_window(
+        db, user,
+        target_status=LeadStatus.NEW,
+        min_days=7,
+        rule_id="stage_new_stuck_7d",
+        urgency="medium",
+        action="email",
+        phrase="还在 NEW 7d+，该首次 reach out",
+    )
+
+
+# 2. CONTACTED, no follow-up > 5d → switch channel
+@register_rule("stage_contacted_stuck_5d", "stage")
+async def rule_stage_contacted_stuck_5d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    return await _stage_stuck_window(
+        db, user,
+        target_status=LeadStatus.CONTACTED,
+        min_days=5,
+        rule_id="stage_contacted_stuck_5d",
+        urgency="medium",
+        action="call",
+        phrase="联系后 5d+ 无进展，跟进或换渠道",
+    )
+
+
+# 3. INTERESTED but stalled > 14d → push to meeting
+@register_rule("stage_interested_stuck_14d", "stage")
+async def rule_stage_interested_stuck_14d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    return await _stage_stuck_window(
+        db, user,
+        target_status=LeadStatus.INTERESTED,
+        min_days=14,
+        rule_id="stage_interested_stuck_14d",
+        urgency="high",
+        action="email",
+        phrase="客户有兴趣 14d+ 没推进，约会议",
+    )
+
+
+# 4. MEETING_SET but stalled > 7d → record meeting outcome
+@register_rule("stage_meeting_set_stuck_7d", "stage")
+async def rule_stage_meeting_set_stuck_7d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    return await _stage_stuck_window(
+        db, user,
+        target_status=LeadStatus.MEETING_SET,
+        min_days=7,
+        rule_id="stage_meeting_set_stuck_7d",
+        urgency="high",
+        action="review",
+        phrase="会议已约 7d+，记录结果或推进下一步",
+    )
+
+
+# 5. PROPOSAL, no answer > 5d → call to ask for feedback
+@register_rule("stage_proposal_stuck_5d", "stage")
+async def rule_stage_proposal_stuck_5d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    return await _stage_stuck_window(
+        db, user,
+        target_status=LeadStatus.PROPOSAL,
+        min_days=5,
+        rule_id="stage_proposal_stuck_5d",
+        urgency="high",
+        action="call",
+        phrase="提案 5d+ 没回应，打电话问反馈",
+    )
+
+
+# 6. CLOSED_WON, no contact > 90d → repurchase check-in
+@register_rule("stage_won_repurchase_90d", "stage")
+async def rule_stage_won_repurchase_90d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    return await _stage_stuck_window(
+        db, user,
+        target_status=LeadStatus.CLOSED_WON,
+        min_days=90,
+        rule_id="stage_won_repurchase_90d",
+        urgency="medium",
+        action="call",
+        phrase="成交 90d+ 没续单，复购检查",
+    )
