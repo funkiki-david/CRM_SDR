@@ -4,6 +4,40 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* === Phase A: design system tokens (mockup-aligned) ===
+ * Brand palette is intentionally limited to navy + 4 colours + neutrals.
+ * Existing shadcn variables below stay untouched so all current components
+ * keep working — we layer the new tokens on top instead of replacing them.
+ */
+:root {
+  /* Fonts (next/font sets --font-body and --font-display in layout.tsx) */
+  --font-sans: var(--font-body);
+
+  /* Brand / nav */
+  --brand-navy: #1a2332;
+  --brand-navy-light: #2a3a50;
+
+  /* 4-colour system + soft tints for badges */
+  --brand-blue: #3b82f6;
+  --brand-blue-soft: #eff6ff;
+  --brand-green: #10b981;
+  --brand-green-soft: #ecfdf5;
+  --brand-amber: #f59e0b;
+  --brand-amber-soft: #fffbeb;
+  --brand-amber-dark: #b45309;
+  --brand-red: #ef4444;
+  --brand-red-soft: #fef2f2;
+
+  /* Neutrals */
+  --bg-app: #fafaf8;
+  --bg-card: #ffffff;
+  --text-primary: #1a1a1a;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --border-strong: #e5e7eb;
+  --border-faint: #f3f4f6;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -123,8 +157,14 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-body), system-ui, -apple-system, sans-serif;
   }
   html {
     @apply font-sans;
+  }
+  /* Display class for h1/h2 + branded numbers — opt-in, doesn't disturb body */
+  .font-display {
+    font-family: var(--font-display), Georgia, serif;
+    font-feature-settings: "ss01", "ss02";  /* Fraunces stylistic sets */
   }
 }

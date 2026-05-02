@@ -9,7 +9,6 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { authApi } from "@/lib/api";
 import QuickEntry from "@/components/quick-entry";
 
@@ -74,50 +73,75 @@ export default function AppShell({ children, quickEntryContactId }: AppShellProp
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--bg-app)" }}>
         <p className="text-slate-500">Loading...</p>
       </div>
     );
   }
 
+  // Phase A: navy navbar with dual-tone Fraunces logo + blue active pill +
+  // pill primary CTA. Inline `style` is used for brand tokens (CSS vars
+  // defined in globals.css) since Tailwind doesn't know about them.
+  const initials = (user?.full_name || user?.email || "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0]?.toUpperCase())
+    .slice(0, 2)
+    .join("");
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Top navigation bar */}
-      <header className="bg-slate-900 px-6 py-3 flex items-center justify-between">
+    <div className="min-h-screen" style={{ background: "var(--bg-app)" }}>
+      {/* Top navigation bar — sticky 56px navy bar */}
+      <header
+        className="sticky top-0 z-40 px-6 flex items-center justify-between"
+        style={{ background: "var(--brand-navy)", height: 56 }}
+      >
         <div className="flex items-center gap-8">
-          <h1 className="text-lg font-bold text-white">SDR CRM</h1>
+          {/* Dual-tone wordmark: "SDR " white + "CRM" blue, Fraunces */}
+          <Link href="/dashboard" className="font-display text-xl font-bold tracking-tight">
+            <span className="text-white">SDR </span>
+            <span style={{ color: "var(--brand-blue)" }}>CRM</span>
+          </Link>
           <nav className="flex items-center gap-1">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                  pathname === link.href
-                    ? "bg-slate-700 text-white"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                {link.label}
-              </Link>
-            ))}
+            {navLinks.map((link) => {
+              const active = pathname === link.href;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors ${
+                    active ? "text-white" : "text-white/60 hover:text-white"
+                  }`}
+                  style={active ? { background: "var(--brand-blue)" } : undefined}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
           </nav>
         </div>
         <div className="flex items-center gap-3">
-          {/* Log Activity button — always visible */}
+          {/* Primary CTA — pill, blue */}
           <Button
             size="sm"
             onClick={() => setQuickEntryOpen(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="text-white text-[13px] font-semibold px-4 h-8"
+            style={{ background: "var(--brand-blue)" }}
           >
-            + Log Activity
+            + Log Action
           </Button>
-          <span className="text-sm text-slate-300">{user?.full_name}</span>
-          <Badge variant="secondary" className="text-xs bg-slate-700 text-slate-200 hover:bg-slate-700">
-            {roleLabels[user?.role || ""] || user?.role}
-          </Badge>
+          <span className="text-[13px] text-white/70 hidden md:inline">{user?.full_name}</span>
+          {/* User avatar — 32px blue circle, white initials */}
+          <div
+            className="flex items-center justify-center rounded-full text-white text-[12px] font-semibold"
+            style={{ background: "var(--brand-blue)", width: 32, height: 32 }}
+            title={`${user?.full_name || ""} (${roleLabels[user?.role || ""] || user?.role})`}
+          >
+            {initials}
+          </div>
           <button
             onClick={handleLogout}
-            className="text-sm text-slate-400 hover:text-white transition-colors"
+            className="text-[13px] text-white/60 hover:text-white transition-colors"
           >
             Sign Out
           </button>
