@@ -94,6 +94,11 @@ async def create_activity(
     db.add(activity)
     await db.flush()
 
+    # v1.3 § 11.3: Direct lead.status update via Log Activity dropdown.
+    # Silently skips when contact has no lead, picks the most recently
+    # updated lead when multiple exist, no history kept (overwrite).
+    await _maybe_update_lead_status(db, data.contact_id, data.lead_status_update)
+
     # If a follow-up date was provided, update or create the lead record
     if data.next_follow_up:
         result = await db.execute(
@@ -134,6 +139,42 @@ async def create_activity(
 from pydantic import BaseModel as _BM
 
 
+async def _maybe_update_lead_status(
+    db: AsyncSession,
+    contact_id: int,
+    new_status: Optional[str],
+) -> None:
+    """v1.3 § 11.3 helper: optionally bump the contact's lead status.
+
+    Behaviour:
+    - new_status is None       → no-op (most common case, don't touch the lead)
+    - contact has no lead      → silent skip (don't error — many contacts are
+                                 leadless during early CRM use)
+    - contact has multiple leads → update the most recently updated one
+    - invalid enum value       → raise HTTPException 400
+    """
+    if new_status is None:
+        return
+    try:
+        target = LeadStatus(new_status)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid lead_status_update. Options: {[s.value for s in LeadStatus]}",
+        )
+    res = await db.execute(
+        select(Lead)
+        .where(Lead.contact_id == contact_id)
+        .order_by(Lead.updated_at.desc())
+        .limit(1)
+    )
+    lead = res.scalar_one_or_none()
+    if lead is None:
+        return  # silent skip — leadless contacts are valid
+    lead.status = target
+    await db.flush()
+
+
 class ActivityPatch(_BM):
     activity_type: Optional[str] = None
     subject: Optional[str] = None
@@ -142,6 +183,8 @@ class ActivityPatch(_BM):
     # Allow editing the original timestamp (e.g. user logged a call yesterday
     # but only got around to entering it today). ISO format with timezone.
     created_at: Optional[datetime] = None
+    # v1.3 § 11.3: same status-update lever as POST.
+    lead_status_update: Optional[str] = None
 
 
 @router.patch("/{activity_id}")
@@ -175,6 +218,9 @@ async def update_activity(
         a.contact_id = data.contact_id
     if data.created_at is not None:
         a.created_at = data.created_at
+
+    # v1.3 § 11.3: also accept lead_status_update during edits.
+    await _maybe_update_lead_status(db, a.contact_id, data.lead_status_update)
 
     await db.flush()
     result = await db.execute(

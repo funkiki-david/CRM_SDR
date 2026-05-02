@@ -61,6 +61,9 @@ export default function QuickEntry({
   const [content, setContent] = useState("");
   const [followUpDate, setFollowUpDate] = useState("");
   const [followUpReason, setFollowUpReason] = useState("");
+  // v1.3 § 11.4: optional lead.status update via Log Activity dropdown.
+  // Default empty string = "(不更新)" — sent as null to backend.
+  const [leadStatus, setLeadStatus] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -89,6 +92,7 @@ export default function QuickEntry({
       setContent("");
       setFollowUpDate("");
       setFollowUpReason("");
+      setLeadStatus("");  // v1.3 default "(不更新)"
       setError("");
       setSuccess(false);
       setContactSearch("");
@@ -193,6 +197,8 @@ export default function QuickEntry({
         content: content || null,
         next_follow_up: followUpDate || null,
         follow_up_reason: followUpReason || null,
+        // v1.3: empty string = SDR didn't choose, leave lead alone
+        lead_status_update: leadStatus || null,
       });
 
       setSuccess(true);
@@ -333,6 +339,28 @@ export default function QuickEntry({
                   Listening... Speak now. Click &quot;Stop Recording&quot; when done.
                 </p>
               )}
+            </div>
+
+            {/* Step 4.5 (v1.3 § 11.4): Lead status — optional bump */}
+            <div className="space-y-2">
+              <Label>
+                Lead Status{" "}
+                <span className="text-gray-400 font-normal">(optional — 推进到哪一步)</span>
+              </Label>
+              <select
+                value={leadStatus}
+                onChange={(e) => setLeadStatus(e.target.value)}
+                className="w-full h-9 px-3 rounded-md border border-slate-200 bg-white text-sm"
+              >
+                <option value="">(不更新)</option>
+                <option value="new">新线索</option>
+                <option value="contacted">已联系</option>
+                <option value="interested">有兴趣</option>
+                <option value="meeting_set">已约会议</option>
+                <option value="proposal">已发提案</option>
+                <option value="closed_won">成交</option>
+                <option value="closed_lost">失败</option>
+              </select>
             </div>
 
             {/* Step 5: Next follow-up (optional) */}

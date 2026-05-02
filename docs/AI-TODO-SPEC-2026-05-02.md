@@ -2,8 +2,8 @@
 
 **项目**:SDR CRM
 **功能模块**:AI Suggested To-Do(Dashboard 面板)
-**版本**:v1.2 — MVP 部署规格(含每日邮件推送)
-**最后更新**:2026-04-30
+**版本**:v1.3 — CP4 范围调整(B 类适配现有 7 个 LeadStatus enum)
+**最后更新**:2026-05-02
 **目标读者**:Claude Code
 
 ---
@@ -91,39 +91,38 @@ Trigger  时间型        阶段型          全局型
 | `pacing_inbound_call_2h` | 最近 activity content 含"客户来电"/"inbound"且 < 2h 且无后续 activity | 立即回拨 | high |
 | `pacing_email_received_today` | sent_emails.direction = received 且当天到达且无后续 sent | 当天回 | high |
 
-### B. 阶段型(12 条) — 基于 lead.status 卡顿检测
+### B. 阶段型(6 条) — 基于现有 lead.status 卡顿检测
 
-12 阶段 lead status 流程图:
+⚠️ **v1.3 重要变更**:本节从 v1.2 的"12 阶段细化版"改回**基于现有 LeadStatus enum 的 7 阶段简化版**。原因:数据库现有 7 个 enum(NEW/CONTACTED/INTERESTED/MEETING_SET/PROPOSAL/CLOSED_WON/CLOSED_LOST)是抽象漏斗维度,不强行扩成 12 阶段以避免技术债。详见第十一节 Activity-Status 联动改造。
 
+**LeadStatus 现有 7 个 enum 值**:
+```python
+class LeadStatus(str, Enum):
+    NEW = "new"
+    CONTACTED = "contacted"
+    INTERESTED = "interested"
+    MEETING_SET = "meeting_set"
+    PROPOSAL = "proposal"
+    CLOSED_WON = "closed_won"
+    CLOSED_LOST = "closed_lost"
 ```
-冷启动                       建立关系                    机会孵化              成交链
-─────────────  →  ─────────────────────  →  ─────────────────────  →  ──────────────
-1. Initial talks      4. Sample pack sent       7. Talking potential       10. PO received
-2. First emailed      5. Sample rolls            project                    11. Order delivered
-3. 2nd emailed         suggested               8. Talking potential        12. Future order
-                      6. (隐含: 样品反馈)        order                       follow up
-                                                9. Price negotiation
-                                                  + Verbal order
-```
 
-**Lead status 正常停留天数表**(已由 David 确认使用此默认值):
+**6 条规则**(CLOSED_LOST 不做规则,已死的 lead 不打扰):
 
-| Status | 默认正常停留 | 卡住后建议动作 | Urgency |
+| ID | 触发条件 | 建议动作 | Urgency |
 |---|---|---|---|
-| Initial talks | 7d | 改 First emailed,推进首邮 | medium |
-| First emailed | 5d | 发 2nd email | medium |
-| 2nd emailed | 7d | switch to call | high |
-| Sample pack sent | 14d | 主动问样品反馈 | high |
-| Sample rolls suggested | 10d | 跟进具体规格需求 | medium |
-| Talking potential project | 21d | 推进到 talking order | medium |
-| Talking potential order | 14d | 推进到 price negotiation | high |
-| Price negotiation | 7d | 缩短报价回应周期 | high |
-| Verbal order | 5d | **每 2 天 nudge,直到 PO**(最容易掉) | high |
-| PO received | 3d | 确认交付时间 | medium |
-| Order delivered | 90d | 自动转 Future order follow up | low |
-| Future order follow up | 60d | 复购检查 | medium |
+| `stage_new_stuck_7d` | lead.status = NEW 且最后 activity > 7d | 该首次 reach out 了 | medium |
+| `stage_contacted_stuck_5d` | lead.status = CONTACTED 且最后 activity > 5d | 跟进或 switch channel | medium |
+| `stage_interested_stuck_14d` | lead.status = INTERESTED 且最后 activity > 14d | 推进到 meeting | high |
+| `stage_meeting_set_stuck_7d` | lead.status = MEETING_SET 且最后 activity > 7d | 记录 meeting outcome 或推进下一步 | high |
+| `stage_proposal_stuck_5d` | lead.status = PROPOSAL 且最后 activity > 5d | 打电话问反馈 | high |
+| `stage_won_repurchase_90d` | lead.status = CLOSED_WON 且最后 activity > 90d | 复购检查 | medium |
 
-每条规则的 ID 命名规则:`stage_<status>_stuck`,例如 `stage_verbal_order_stuck`。
+**实现注意事项**:
+- 函数命名:`rule_<id>`,例如 `rule_stage_proposal_stuck_5d`
+- category="stage",每条规则用 `@register_rule("<id>", "stage")` 装饰
+- "最后 activity"统一定义为 `activities` 表里 `lead_id`(或通过 `contact_id` 关联)的 `MAX(created_at)`
+- 单条规则触发时,rationale 用中文,< 30 字,例:"Sarah Chen @ Acme — 提案 6 天没回应"
 
 ### C. 管理纪律类(7 条) — 全局周期任务
 
@@ -172,13 +171,13 @@ Trigger  时间型        阶段型          全局型
 ## 四、规则总数 & MVP 范围
 
 ```
-A. 跟进节奏类       12 条  ✅ 全部 MVP
-B. 阶段型           12 条  ✅ 全部 MVP(用确认的停留天数)
+A. 跟进节奏类       12 条  ✅ 全部 MVP(已在 CP1-3 完成)
+B. 阶段型            6 条  ✅ 全部 MVP(v1.3 调整,适配现有 7 个 enum)
 C. 管理纪律类        6 条  ✅ MVP(扣除已存在的 daily followups)
 D. 数据健康类        6 条  ✅ 全部 MVP
 E. 关系维护类        8 条  ✅ 4 条 MVP / 4 条 backlog
 ─────────────────────────
-共 40 条已锁定 / MVP 落地 36 条
+共 34 条已锁定 / MVP 落地 30 条
 ```
 
 ---
@@ -598,3 +597,162 @@ MVP 阶段先做最简的:
 - ⏰ **WhatsApp Click-to-Chat**:用户主动点链接 push 到自己 WhatsApp,零成本但需用户主动触发
 
 这三条独立讨论,见下次头脑风暴。
+
+---
+
+## 十一、Activity-Status 联动改造(CP4 子任务)
+
+### 11.1 背景
+
+v1.2 假设 Manager 会主动维护 lead.status,但实际工作流里很容易忘记。**v1.3 引入新设计**:把 status 选择嵌入 Log Activity 流程,SDR 每次记 activity 时顺手更新 status。
+
+### 11.2 设计决策(David 已拍板)
+
+| # | 决策点 | 选择 |
+|---|---|---|
+| 1 | Activity → Lead.status 关系 | **A. 直接更新,不留历史** |
+| 2 | 哪些 activity 类型必选 status | **C. 全部可选** |
+| 3 | Status 倒退处理 | **A. 允许,无提示** |
+
+**核心逻辑**:
+- 5 种 activity 类型(call/email/meeting/note/linkedin)**全部可选**填 status
+- SDR 选了就直接 `UPDATE leads SET status = ?`,**没有任何确认弹窗**
+- **不留历史轨迹**(原 lead.status 直接被覆盖)
+
+### 11.3 后端改动
+
+#### Schema:**不动**
+
+不加任何字段,不动 enum,不改 lead 表结构。
+
+#### API:`POST /api/activities`
+
+文件:`backend/app/api/routes/activities.py`(具体路径以代码为准)
+
+新增可选字段 `lead_status_update`:
+
+```python
+class ActivityCreate(BaseModel):
+    contact_id: int
+    type: ActivityType  # call / email / meeting / note / linkedin
+    content: Optional[str] = None
+    # ... 其他现有字段
+    
+    # v1.3 新增
+    lead_status_update: Optional[LeadStatus] = None  # 可选,SDR 想填就填
+```
+
+请求处理逻辑:
+```python
+@router.post("/activities")
+async def create_activity(
+    data: ActivityCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # 1. 创建 activity 记录(原有逻辑不变)
+    activity = Activity(...)
+    db.add(activity)
+    
+    # 2. v1.3 新增:如果传了 lead_status_update,同步更新 lead.status
+    if data.lead_status_update is not None:
+        # 找到这个 contact 关联的 lead
+        lead_q = await db.execute(
+            select(Lead).where(Lead.contact_id == data.contact_id).limit(1)
+        )
+        lead = lead_q.scalar_one_or_none()
+        if lead:
+            lead.status = data.lead_status_update
+            # 不留历史,直接覆盖
+    
+    await db.commit()
+    return activity
+```
+
+⚠️ **边界情况**:
+- contact 没有关联 lead → 静默 skip,不报错(因为现在很多 contact 没 lead 数据)
+- contact 有多个 lead → 只更新最新的一个(`ORDER BY created_at DESC LIMIT 1`)
+- `lead_status_update` 是 NULL → 不动 lead.status
+
+#### API:`PATCH /api/activities/{id}`(编辑活动)
+
+同样支持 `lead_status_update` 字段,逻辑相同。
+
+### 11.4 前端改动
+
+#### `frontend/src/components/quick-entry.tsx`(376 行)
+
+加一个**可选**的 status 下拉:
+
+```tsx
+// 7 个 enum 中文翻译(显示用)
+const STATUS_OPTIONS = [
+  { value: null, label: "(不更新)" },  // 默认值
+  { value: "new", label: "新线索" },
+  { value: "contacted", label: "已联系" },
+  { value: "interested", label: "有兴趣" },
+  { value: "meeting_set", label: "已约会议" },
+  { value: "proposal", label: "已发提案" },
+  { value: "closed_won", label: "成交" },
+  { value: "closed_lost", label: "失败" },
+];
+
+// 在表单里加:
+<Select value={leadStatus ?? "null"} onChange={...}>
+  {STATUS_OPTIONS.map(o => <Option value={o.value}>{o.label}</Option>)}
+</Select>
+
+// 提交时:
+await api.createActivity({
+  ...formData,
+  lead_status_update: leadStatus,  // null 时后端会跳过
+});
+```
+
+⚠️ **UI 注意事项**:
+- 默认选中 "(不更新)"——避免 SDR 不小心覆盖了正确的 status
+- 5 种 activity 类型(call/email/meeting/note/linkedin)**都显示这个下拉**,不做差异化
+- 下拉的 label 用中文,value 用英文 enum
+
+#### `frontend/src/components/edit-activity.tsx`(227 行)
+
+同样加这个下拉,行为一致。
+
+### 11.5 验收标准
+
+#### 单元测试
+
+`backend/tests/test_activity_status_update.py`:
+
+1. `test_create_activity_no_status_update` — 不传字段,lead.status 不变
+2. `test_create_activity_with_status_update` — 传了字段,lead.status 被更新
+3. `test_create_activity_status_update_no_lead` — contact 没 lead,静默 skip 不报错
+4. `test_create_activity_status_update_multiple_leads` — contact 有多个 lead,只更新最新的
+5. `test_create_activity_downgrade_allowed` — 从 PROPOSAL → INTERESTED 允许,无报错
+
+#### 端到端测试
+
+David 在本地手动验证:
+1. 用 Doug 账号登录 → 给某 contact 创建一条 call,选 "已发提案" → 确认 lead.status 变成 PROPOSAL
+2. 再创建一条 note,不选 status → 确认 lead.status 还是 PROPOSAL
+3. 再创建一条 email,选 "有兴趣"(downgrade) → 确认 lead.status 变成 INTERESTED,无报错
+
+### 11.6 与 CP4 B 类规则的关系
+
+CP4 必须**先完成 11.3 的后端改造**,再实现 6 条 stage 规则。
+
+理由:如果 lead.status 长期是错的(因为 SDR 不更新),stage 规则的触发会很离谱(eg "lead 在 NEW 状态 90 天 → 提醒"——但其实客户已经成交了)。**先把数据来源修对,再做基于数据的规则**。
+
+实现顺序:
+1. 后端 `POST /api/activities` 加字段 + 单测
+2. 前端 quick-entry / edit-activity 加下拉
+3. 部署 + 让 SDR 用 1-2 天,产生真实 status 数据
+4. 实现 6 条 stage 规则
+5. 6 条规则单测(每条 ≥ 2 个 case)
+6. 部署 + 验收
+
+### 11.7 后续扩展(不在 v1.3 范围)
+
+- **Status 变更通知**:如果 SDR 把 lead 推到 CLOSED_WON,自动通知 Manager(slack/邮件)
+- **Status 历史**:如果未来需要看变迁轨迹,再加 `lead_status_history` 表(现在不做)
+- **Status 自动推断**:基于 activity 类型 + 内容,Claude 推断 SDR 应该选哪个 status(现在不做,先看人工填的数据质量)

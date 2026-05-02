@@ -17,6 +17,9 @@ class ActivityCreate(BaseModel):
     # Optional: set next follow-up when logging this activity
     next_follow_up: Optional[date] = None
     follow_up_reason: Optional[str] = None
+    # v1.3 (spec § 11): SDR can optionally bump the linked lead's status
+    # while logging the activity. None = leave lead.status alone.
+    lead_status_update: Optional[str] = None
 
 
 class ActivityResponse(BaseModel):

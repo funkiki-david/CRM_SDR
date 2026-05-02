@@ -532,3 +532,155 @@ async def _quote_window(
         out.append(_make(lead.contact_id, rule_id, urgency, action,
                          f"{lead.contact_id} — {phrase}"))
     return await _decorate(db, out)
+
+
+# --- D. Data health rules (6) ---
+
+
+def _make_data(
+    contact_id: int,
+    rule_id: str,
+    urgency: Urgency,
+    action: SuggestedAction,
+    rationale_seed: str,
+) -> TodoSuggestion:
+    """Like _make but emits category='data_health'."""
+    return TodoSuggestion(
+        rule_id=rule_id,
+        urgency=urgency,
+        category="data_health",
+        suggested_action=action,
+        rationale=rationale_seed,
+        contact_id=contact_id,
+    )
+
+
+# 1. data_missing_phone: contact created > 7d ago, both phone fields null
+@register_rule("data_missing_phone", "data_health")
+async def rule_data_missing_phone(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    _ = user
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    res = await db.execute(
+        select(Contact).where(
+            Contact.created_at < cutoff,
+            Contact.mobile_phone.is_(None),
+            Contact.office_phone.is_(None),
+        )
+    )
+    out = [
+        _make_data(c.id, "data_missing_phone", "low", "review",
+                   f"{c.id} — 缺手机号 + 办公室电话")
+        for c in res.scalars().all()
+    ]
+    return await _decorate(db, out)
+
+
+# 2. data_missing_linkedin
+@register_rule("data_missing_linkedin", "data_health")
+async def rule_data_missing_linkedin(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    _ = user
+    res = await db.execute(
+        select(Contact).where(Contact.linkedin_url.is_(None))
+    )
+    out = [
+        _make_data(c.id, "data_missing_linkedin", "low", "review",
+                   f"{c.id} — 缺 LinkedIn")
+        for c in res.scalars().all()
+    ]
+    return await _decorate(db, out)
+
+
+# 3. data_missing_industry: industry OR company_size missing
+@register_rule("data_missing_industry", "data_health")
+async def rule_data_missing_industry(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    from sqlalchemy import or_
+    _ = user
+    res = await db.execute(
+        select(Contact).where(
+            or_(Contact.industry.is_(None), Contact.company_size.is_(None))
+        )
+    )
+    out = [
+        _make_data(c.id, "data_missing_industry", "low", "review",
+                   f"{c.id} — 缺行业 / 公司规模")
+        for c in res.scalars().all()
+    ]
+    return await _decorate(db, out)
+
+
+# 4. data_dead_contact_30d: created > 30d, zero activity records
+@register_rule("data_dead_contact_30d", "data_health")
+async def rule_data_dead_contact_30d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    _ = user
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    # Subquery: contact_ids that DO have activity
+    active_ids = (
+        select(Activity.contact_id).distinct().subquery()
+    )
+    res = await db.execute(
+        select(Contact).where(
+            Contact.created_at < cutoff,
+            Contact.id.notin_(select(active_ids.c.contact_id)),
+        )
+    )
+    out = [
+        _make_data(c.id, "data_dead_contact_30d", "medium", "review",
+                   f"{c.id} — 创建 30d+ 还 0 条活动，判断是不是 dead")
+        for c in res.scalars().all()
+    ]
+    return await _decorate(db, out)
+
+
+# 5. data_lead_stuck_60d: lead.updated_at > 60d ago (regardless of status)
+@register_rule("data_lead_stuck_60d", "data_health")
+async def rule_data_lead_stuck_60d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    _ = user
+    cutoff = datetime.now(timezone.utc) - timedelta(days=60)
+    res = await db.execute(
+        select(Lead).where(
+            Lead.updated_at < cutoff,
+            Lead.status.notin_([LeadStatus.CLOSED_WON, LeadStatus.CLOSED_LOST]),
+        )
+    )
+    out = [
+        _make_data(lead.contact_id, "data_lead_stuck_60d", "medium", "review",
+                   f"{lead.contact_id} — Lead 60d+ 没动，推进或归档")
+        for lead in res.scalars().all()
+    ]
+    return await _decorate(db, out)
+
+
+# 6. data_collision_7d: same contact has activity from ≥ 2 distinct owner_ids
+#    in the last 7 days. Signals two SDRs working the same prospect.
+@register_rule("data_collision_7d", "data_health")
+async def rule_data_collision_7d(
+    db: AsyncSession, user: User
+) -> list[TodoSuggestion]:
+    _ = user
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    res = await db.execute(
+        select(
+            Activity.contact_id,
+            func.count(func.distinct(Activity.user_id)).label("uniq_owners"),
+        )
+        .where(Activity.created_at >= cutoff)
+        .group_by(Activity.contact_id)
+        .having(func.count(func.distinct(Activity.user_id)) >= 2)
+    )
+    rows = res.all()
+    out = [
+        _make_data(cid, "data_collision_7d", "high", "review",
+                   f"{cid} — 7d 内多人触达，检查撞车")
+        for cid, _n in rows
+    ]
+    return await _decorate(db, out)

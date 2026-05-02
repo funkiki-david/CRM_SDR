@@ -88,6 +88,8 @@ export default function EditActivity({ open, activity, onClose, onSaved }: EditA
   const [contacts, setContacts] = useState<ContactOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // v1.3 § 11.4: optional lead.status update on edit. Default "(不更新)".
+  const [leadStatus, setLeadStatus] = useState<string>("");
 
   // Prefill whenever the dialog opens with a fresh activity
   useEffect(() => {
@@ -97,6 +99,7 @@ export default function EditActivity({ open, activity, onClose, onSaved }: EditA
     setDate(isoToDateInput(activity.created_at));
     setSubject(activity.subject || "");
     setContent(activity.content || "");
+    setLeadStatus("");  // edits default to "no change", to avoid stomping
     setError("");
   }, [open, activity]);
 
@@ -125,6 +128,7 @@ export default function EditActivity({ open, activity, onClose, onSaved }: EditA
         contact_id: contactId,
       };
       if (isoDate) payload.created_at = isoDate;
+      if (leadStatus) payload.lead_status_update = leadStatus;
       const updated = await activitiesApi.update(activity.id, payload) as ActivityShape;
       onSaved(updated);
       onClose();
@@ -208,6 +212,27 @@ export default function EditActivity({ open, activity, onClose, onSaved }: EditA
               className="min-h-[140px] text-sm"
               rows={6}
             />
+          </div>
+
+          {/* v1.3 § 11.4: optional lead status bump */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">
+              Lead Status <span className="text-slate-400">(optional — 推进到哪一步)</span>
+            </Label>
+            <select
+              value={leadStatus}
+              onChange={(e) => setLeadStatus(e.target.value)}
+              className="w-full h-9 px-3 rounded-md border border-slate-200 bg-white text-sm"
+            >
+              <option value="">(不更新)</option>
+              <option value="new">新线索</option>
+              <option value="contacted">已联系</option>
+              <option value="interested">有兴趣</option>
+              <option value="meeting_set">已约会议</option>
+              <option value="proposal">已发提案</option>
+              <option value="closed_won">成交</option>
+              <option value="closed_lost">失败</option>
+            </select>
           </div>
 
           {error && <p className="text-sm text-red-500">{error}</p>}
