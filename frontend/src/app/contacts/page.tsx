@@ -225,7 +225,7 @@ function enrichFieldLabel(field: string): string {
   return labels[field] || field;
 }
 
-/** "Generated 3 days ago" / "Generated today" — 相对时间 */
+/** "Generated 3 days ago" / "Generated today" — relative-time formatter */
 function relativeDays(dateStr: string | null): string | null {
   if (!dateStr) return null;
   const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);

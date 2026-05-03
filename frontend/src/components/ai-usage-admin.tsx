@@ -1,6 +1,7 @@
 /**
- * Admin AI Usage Panel — Settings 页专用
- * 显示所有用户今日用量 + 调整每用户每日上限 + 本月总计
+ * Admin AI Usage Panel — used on the Settings page.
+ * Shows every user's today usage, lets the admin adjust the per-user daily
+ * limit, and reports the month-to-date total.
  */
 "use client";
 

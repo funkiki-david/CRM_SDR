@@ -88,7 +88,7 @@ export default function EditActivity({ open, activity, onClose, onSaved }: EditA
   const [contacts, setContacts] = useState<ContactOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  // v1.3 § 11.4: optional lead.status update on edit. Default "(不更新)".
+  // v1.3 § 11.4: optional lead.status update on edit. Default "(no change)".
   const [leadStatus, setLeadStatus] = useState<string>("");
 
   // Prefill whenever the dialog opens with a fresh activity

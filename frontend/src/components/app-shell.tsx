@@ -57,7 +57,7 @@ export default function AppShell({ children, quickEntryContactId }: AppShellProp
       .getMe()
       .then(setUser)
       .catch(() => {
-        // Token 失效：清 token + remembered email（spec: 退出登录清所有）
+        // Token invalid → clear token + remembered email (spec: full sign-out wipes everything).
         localStorage.removeItem("token");
         localStorage.removeItem("sdr_crm_remembered_email");
         router.push("/login");

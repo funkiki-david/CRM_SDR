@@ -1,10 +1,10 @@
 /**
- * Dashboard — 2026 CRM 最佳实践版本
+ * Dashboard — 2026 CRM layout.
  *
- * 布局：
+ * Layout:
  *   - Welcome header (Welcome back, David)
- *   - Quick Stats: 4 个数字卡 (Contacts / Emails / Calls / Meetings)
- *   - 60/40 两栏：
+ *   - Quick Stats: 4 number cards (Contacts / Emails / Calls / Meetings)
+ *   - 60/40 split:
  *       Left  (60%): Follow-Ups Needed + Activity Feed
  *       Right (40%): AI Suggested To-Do
  */

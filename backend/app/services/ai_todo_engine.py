@@ -159,8 +159,8 @@ async def generate_todos_for_user(
 
 # Keyword sets for content-based pacing rules. Top-level constants so they
 # can be tuned without editing rule logic. Case-insensitive matching.
-NO_ANSWER_KEYWORDS = ["未接通", "voicemail", "no answer", "left message"]
-INBOUND_KEYWORDS = ["客户来电", "inbound", "incoming call", "called in"]
+NO_ANSWER_KEYWORDS = ["voicemail", "no answer", "left message"]
+INBOUND_KEYWORDS = ["inbound", "incoming call", "called in"]
 
 # Activity types that "count" as the latest interaction. All five count.
 _INTERACTION_TYPES = {

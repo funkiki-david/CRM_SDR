@@ -1,12 +1,12 @@
 /**
- * Emails Page — unified inbox + sent list
+ * Emails Page — unified inbox + sent list.
  *
- * 两栏布局：左列表（40%）/ 右详情（60%）
+ * Two-pane layout: left list (40%) / right detail (60%).
  *   - Tabs: Inbox / Sent / All
- *   - 搜索: subject / from / to
- *   - Sync Inbox 按钮：POST /api/emails/sync 拉 IMAP
- *   - 点列表项 → 右侧加载完整邮件
- *   - Reply 按钮：用已有 EmailCompose，预填 To / Re: subject
+ *   - Search: subject / from / to
+ *   - Sync Inbox button: POST /api/emails/sync to pull IMAP
+ *   - Click a list item → load full message on the right
+ *   - Reply button: opens EmailCompose pre-filled with To and Re: subject
  */
 "use client";
 

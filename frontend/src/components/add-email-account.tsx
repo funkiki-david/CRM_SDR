@@ -1,13 +1,14 @@
 /**
- * Add Email Account Modal — 三种邮箱服务商选择
+ * Add Email Account Modal — three provider choices.
  *
- *   1. Google Gmail    → OAuth（暂为占位，OAuth credentials 配置后启用）
- *   2. Microsoft Outlook → OAuth（同上，暂走 SMTP 作为替代）
- *   3. Other SMTP     → 通用 SMTP/IMAP 表单
+ *   1. Google Gmail      → OAuth (placeholder until OAuth credentials are wired)
+ *   2. Microsoft Outlook → OAuth (same; falls back to SMTP for now)
+ *   3. Other SMTP        → Generic SMTP / IMAP form
  *
- * SMTP 模式：
- *   - 保存前可点 "Test Connection" 验证凭据
- *   - 密码后端 Fernet 加密存储，前端明文只在提交的一瞬间经过网络
+ * SMTP mode:
+ *   - "Test Connection" validates credentials before saving
+ *   - Password is encrypted with Fernet on the backend; plaintext only crosses
+ *     the wire on the save request
  */
 "use client";
 
@@ -32,7 +33,8 @@ interface AddEmailAccountProps {
 
 type Provider = "picker" | "gmail" | "outlook" | "smtp";
 
-// 常见邮箱的 SMTP 预设 —— 选完 Other SMTP 可以按邮箱域名自动填
+// SMTP presets keyed by email domain — auto-fills the form once a known
+// domain is entered in the Other SMTP flow.
 const SMTP_PRESETS: Record<string, Partial<SmtpForm>> = {
   "gmail.com": { smtp_host: "smtp.gmail.com", smtp_port: 587, imap_host: "imap.gmail.com", imap_port: 993, smtp_encryption: "starttls" },
   "googlemail.com": { smtp_host: "smtp.gmail.com", smtp_port: 587, imap_host: "imap.gmail.com", imap_port: 993, smtp_encryption: "starttls" },
@@ -43,7 +45,8 @@ const SMTP_PRESETS: Record<string, Partial<SmtpForm>> = {
   "office365.com": { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
 };
 
-// 默认 SMTP 设置按上游 provider 填充（点 Gmail / Outlook 的 "Use SMTP Instead" 按钮时用）
+// Default SMTP settings per upstream provider — used when the user clicks
+// "Use SMTP Instead" on the Gmail / Outlook screens.
 const PROVIDER_DEFAULTS: Record<"gmail" | "outlook", Partial<SmtpForm>> = {
   gmail: { smtp_host: "smtp.gmail.com", smtp_port: 587, imap_host: "imap.gmail.com", imap_port: 993, smtp_encryption: "starttls" },
   outlook: { smtp_host: "smtp.office365.com", smtp_port: 587, imap_host: "outlook.office365.com", imap_port: 993, smtp_encryption: "starttls" },
@@ -103,19 +106,19 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
     onClose();
   }, [reset, onClose]);
 
-  // 填邮箱时同步 username + 尝试套预设
+  // When the email is typed, mirror it into username and try to apply a preset.
   const handleEmailChange = (val: string) => {
     const domain = val.split("@")[1]?.toLowerCase() || "";
     const preset = SMTP_PRESETS[domain] || {};
     setForm(prev => ({
       ...prev,
       email_address: val,
-      smtp_username: val, // 默认 username = email
+      smtp_username: val, // default username = email
       ...preset,
     }));
   };
 
-  // 必填字段校验：哪些没填 —— UI 用来显示"Missing: X, Y"
+  // Required-field validation; the UI shows "Missing: X, Y" using this list.
   const missingFields: string[] = [];
   if (!form.email_address.trim()) missingFields.push("Email");
   if (!form.smtp_host.trim()) missingFields.push("SMTP Server");
@@ -148,8 +151,7 @@ export default function AddEmailAccount({ open, onClose, onSuccess }: AddEmailAc
     setSaveError(null);
     setTestResult(null);
     try {
-      // 先测试连接 —— 失败则不保存
-      // Test connection first; only save if auth succeeds
+      // Test connection first — only save if authentication succeeds.
       try {
         await emailsApi.testSmtp({
           smtp_host: form.smtp_host.trim(),

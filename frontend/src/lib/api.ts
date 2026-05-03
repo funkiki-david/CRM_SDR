@@ -1,16 +1,16 @@
 /**
- * API 客户端 — 前端调后端的统一入口
- * 所有和后端的通信都通过这个文件
+ * API client — single entry point for every backend call from the frontend.
  */
 
-// 后端地址（Docker 环境下由环境变量提供，本地开发默认 localhost:8000）
+// Backend base URL. In Docker / Railway it is set via NEXT_PUBLIC_API_URL;
+// falls back to localhost for local dev.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
- * 通用请求函数 — 自动附带 token 和错误处理
+ * Shared fetch wrapper — attaches the bearer token and surfaces server errors
+ * through a thrown Error whose message is the backend's `detail` field.
  */
 async function request(path: string, options: RequestInit = {}) {
-  // 从浏览器本地存储获取 token（登录后存的）
   const token = typeof window !== "undefined"
     ? localStorage.getItem("token")
     : null;
@@ -20,7 +20,6 @@ async function request(path: string, options: RequestInit = {}) {
     ...(options.headers as Record<string, string>),
   };
 
-  // 如果有 token，加到请求头里
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -30,7 +29,7 @@ async function request(path: string, options: RequestInit = {}) {
     headers,
   });
 
-  // 如果 token 过期（401），清所有保存的信息 + 跳转到登录页
+  // 401 → token expired or invalid. Wipe local auth and bounce to /login.
   if (response.status === 401 && typeof window !== "undefined") {
     localStorage.removeItem("token");
     localStorage.removeItem("sdr_crm_remembered_email");
@@ -47,10 +46,10 @@ async function request(path: string, options: RequestInit = {}) {
 }
 
 /**
- * 认证相关 API
+ * Auth API
  */
 export const authApi = {
-  /** 登录 — 返回 token. remember_me=true 时 token 有效期 30 天（默认 8 小时）*/
+  /** Login — returns a JWT. remember_me=true issues a 30-day token instead of the default 8-hour one. */
   login: (email: string, password: string, rememberMe = false) =>
     request("/api/auth/login", {
       method: "POST",
@@ -60,7 +59,7 @@ export const authApi = {
   /** Get current user info */
   getMe: () => request("/api/auth/me"),
 
-  /** Start Google OAuth —— 返回 auth URL, 前端 window.location 跳过去 */
+  /** Start Google OAuth — returns the auth URL the frontend redirects to. */
   googleOAuthStart: () => request("/api/auth/google/start") as Promise<{ auth_url: string }>,
 };
 
@@ -149,8 +148,8 @@ export const contactsApi = {
   enrichStatus: () => request(`/api/contacts/enrich/status`),
 
   /**
-   * 批量导入 CSV。file 是 File 对象（来自 input[type=file] 或 drag-drop）。
-   * 返回 {created, updated, skipped, failed, errors}。
+   * Bulk-import contacts from a CSV File (input[type=file] or drag-drop).
+   * Returns {created, updated, skipped, failed, errors}.
    */
   importCsv: async (file: File, updateExisting = false) => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -173,8 +172,8 @@ export const contactsApi = {
   },
 
   /**
-   * 触发浏览器下载：导出当前用户可见的联系人为 CSV
-   * 角色权限在后端执行（SDR 只导自己）
+   * Trigger a browser download of the current user's visible contacts as CSV.
+   * Role-based filtering is enforced on the backend (SDR exports own only).
    */
   exportCsv: async () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -194,7 +193,7 @@ export const contactsApi = {
     URL.revokeObjectURL(url);
   },
 
-  /** 下载空白 CSV 模板 */
+  /** Download a blank CSV template */
   downloadTemplate: async () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -332,9 +331,9 @@ export const emailsApi = {
   removeAccount: (id: number) =>
     request(`/api/emails/accounts/${id}`, { method: "DELETE" }),
 
-  // Users API 在下面单独导出 usersApi，这里顺手不碰
+  // Users API is exported separately below as `usersApi`.
 
-  /** 测试 SMTP 凭据（保存前验证）*/
+  /** Validate SMTP credentials before saving the account */
   testSmtp: (data: {
     smtp_host: string;
     smtp_port: number;

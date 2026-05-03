@@ -72,7 +72,7 @@ export default function SettingsPage() {
   // Add email account modal
   const [addModalOpen, setAddModalOpen] = useState(false);
 
-  // OAuth callback toast（?gmail=connected 或 ?gmail=error 回来）
+  // OAuth callback toast (Google redirects back with ?gmail=connected|error)
   const [oauthMessage, setOauthMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Current user (for Team Members Admin-only controls)
@@ -182,7 +182,7 @@ export default function SettingsPage() {
       setCurrentUserRole(u.role);
     }).catch(() => { /* ignore */ });
 
-    // 读 URL query — 从 Google OAuth 回来时会带 ?gmail=connected|error
+    // Read URL query — Google OAuth callback appends ?gmail=connected|error
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const status = params.get("gmail");
@@ -418,7 +418,7 @@ export default function SettingsPage() {
               </div>
             ) : null}
 
-            {/* Input for new key — 只在没从 env 加载时强制显示 */}
+            {/* Input for new key — only shown when no env-provided key is active. */}
             <div className="flex gap-2">
               <Input
                 type="password"

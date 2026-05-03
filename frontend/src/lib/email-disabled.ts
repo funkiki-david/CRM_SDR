@@ -1,10 +1,11 @@
 /**
  * Temporary kill-switch for all email-related UI actions.
  *
- * 把所有 email 按钮的 onClick 指向 notifyEmailDisabled() 即可临时停用。
- * 后端 API / 数据库 schema / UI 布局完全不动 —— 这是纯前端拦截。
+ * Point every email button's onClick to `notifyEmailDisabled()` to soft-disable
+ * sending. Backend API / DB schema / UI layout stay intact — this is purely a
+ * front-end intercept.
  *
- * 恢复方式：把 onClick 改回原来的 handler，或直接删除本文件。
+ * To restore: revert the onClick handlers, or delete this file.
  */
 
 export function notifyEmailDisabled(): void {

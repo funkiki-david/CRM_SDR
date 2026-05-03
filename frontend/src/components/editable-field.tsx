@@ -1,7 +1,7 @@
 /**
  * EditableField — inline edit with pencil icon, Enter to save, Esc to cancel.
  *
- * 用法:
+ * Usage:
  *   <EditableField
  *     value={contact.first_name}
  *     onSave={(v) => contactsApi.update(id, { first_name: v })}
@@ -9,12 +9,12 @@
  *   />
  *
  * UX:
- *   - 默认显示文字 + hover 时浮现 ✏️ 图标
- *   - 点击文字或图标 → 变输入框（autoFocus）
- *   - Enter / blur → 保存（调 onSave）
- *   - Esc → 取消
- *   - 保存成功：绿色 ✓ Saved 提示 2 秒
- *   - 保存失败：红边框 + 错误文字
+ *   - Default: shows text + a pencil icon on hover
+ *   - Click text or icon → switches to input (autoFocus)
+ *   - Enter / blur → save (calls onSave)
+ *   - Esc → cancel
+ *   - Save success: green ✓ Saved badge for 2 seconds
+ *   - Save failure: red border + error message
  */
 "use client";
 
@@ -24,13 +24,13 @@ interface EditableFieldProps {
   value: string | null;
   onSave: (newValue: string) => Promise<void> | void;
   placeholder?: string;
-  emptyLabel?: string;          // 显示文字为空时的占位 "Not set"
-  multiline?: boolean;          // 用 <textarea> 代替 <input>
-  className?: string;           // 外层 span 样式
+  emptyLabel?: string;          // Placeholder shown when value is empty (e.g. "Not set")
+  multiline?: boolean;          // Use <textarea> instead of <input>
+  className?: string;           // Outer span styles
   inputClassName?: string;
   maxLength?: number;
   type?: "text" | "email" | "url";
-  validate?: (v: string) => string | null;  // 返回错误消息；null 即合法
+  validate?: (v: string) => string | null;  // Returns error message; null means valid
 }
 
 export function EditableField({
@@ -52,7 +52,7 @@ export function EditableField({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
-  // 父级 value 变化时同步 draft（例如 Enrich 后刷新）
+  // Sync the draft when the parent value changes (e.g. after Enrich refresh).
   useEffect(() => {
     if (!editing) setDraft(value ?? "");
   }, [value, editing]);

@@ -1,9 +1,9 @@
 /**
- * Team Members — 团队成员列表 + Admin 管理操作
+ * Team Members — list + Admin-only management actions.
  *
- * 所有登录用户能看到列表。Admin 额外能：
+ * Any signed-in user can view the list. Admins additionally can:
  *   - Add Team Member (+)
- *   - Edit (改名字 / 角色 / 重置密码)
+ *   - Edit (name / role / reset password)
  *   - Deactivate / Activate
  */
 "use client";
@@ -357,7 +357,7 @@ function EditMemberModal({
 }) {
   const [fullName, setFullName] = useState(member.full_name);
   const [role, setRole] = useState<Role>(member.role);
-  const [password, setPassword] = useState(""); // 空 → 不改密码
+  const [password, setPassword] = useState(""); // empty → leave password unchanged
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

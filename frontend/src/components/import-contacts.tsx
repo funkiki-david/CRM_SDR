@@ -1,12 +1,12 @@
 /**
- * Import Contacts Modal — 批量从 CSV 导入联系人
+ * Import Contacts Modal — bulk-import contacts from a CSV file.
  *
- * 功能：
- *   - 拖拽或点击上传 CSV 文件
- *   - 导入前显示预览（前 5 行 + 行数）
- *   - 选择是否更新已存在的联系人（默认跳过）
- *   - 导入后显示结果报告：成功/更新/跳过/失败
- *   - 下载空白模板
+ * Features:
+ *   - Drag-and-drop or click-to-upload a CSV
+ *   - Show a preview (first 5 rows + total row count) before importing
+ *   - Choose whether to update existing contacts (default: skip)
+ *   - Show a report after import: created / updated / skipped / failed
+ *   - Download a blank template
  */
 "use client";
 
@@ -60,7 +60,7 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
     onClose();
   }, [onClose, reset]);
 
-  // 简单的 CSV 前端解析（只用于预览前 5 行）
+  // Lightweight client-side CSV parse — used only for the 5-row preview.
   const parsePreview = useCallback(async (f: File) => {
     const text = await f.text();
     const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
@@ -68,7 +68,7 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
       setError("File is empty");
       return;
     }
-    // 简易分割，不处理带引号逗号的特殊情况 —— 预览足够
+    // Naive split — does not handle quoted commas. Good enough for preview.
     const header = lines[0].split(",").map(s => s.trim());
     const rows = lines.slice(1, 6).map(line => line.split(","));
     setPreview({ header, rows, total: lines.length - 1 });
@@ -113,7 +113,7 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
           <DialogTitle>Import Contacts from CSV</DialogTitle>
         </DialogHeader>
 
-        {/* === 结果页 === */}
+        {/* === Result view === */}
         {result ? (
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-4 gap-3 text-center">
@@ -154,7 +154,7 @@ export default function ImportContacts({ open, onClose, onSuccess }: ImportConta
             </DialogFooter>
           </div>
         ) : (
-          // === 上传 / 预览页 ===
+          // === Upload / preview view ===
           <div className="space-y-4 py-2">
             {!file ? (
               <div

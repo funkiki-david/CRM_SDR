@@ -1,9 +1,9 @@
 /**
- * AI Budget — 共享组件 + Hook
+ * AI Budget — shared component + hook.
  *
- *   useAIBudget()       Hook — 返回当前用户今日额度 + 刷新方法
- *   <AIBudgetBadge/>    紧凑徽章，用在 AI 按钮旁
- *   <AILimitModal/>     额度用完时的阻断弹窗
+ *   useAIBudget()       Hook — returns the current user's today usage + a refresher
+ *   <AIBudgetBadge/>    Compact badge, sits next to AI buttons
+ *   <AILimitModal/>     Blocking modal shown once the budget is exhausted
  */
 "use client";
 
@@ -135,8 +135,9 @@ export function AILimitModal({
 // ==================== Guarded AI Button ====================
 
 /**
- * 简便写法：AI 按钮包一层 —— 超限时点击弹窗阻止调用。
- * 用法：
+ * Convenience wrapper around any AI-triggering button. When the budget is
+ * exhausted the click pops the limit modal instead of firing onClick.
+ * Usage:
  *   <AIGuardedButton usage={usage} onClick={doAICall}>Generate</AIGuardedButton>
  */
 export function AIGuardedButton({

@@ -22,8 +22,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // 打开登录页时，如果本地有保存过的邮箱，自动填入
-  // On mount: prefill email if user previously opted into "Remember me"
+  // On mount: prefill email if the user previously opted into "Remember me".
   useEffect(() => {
     const saved = typeof window !== "undefined"
       ? localStorage.getItem(REMEMBERED_EMAIL_KEY)
@@ -43,8 +42,8 @@ export default function LoginPage() {
       const data = await authApi.login(email, password, rememberMe);
       localStorage.setItem("token", data.access_token);
 
-      // Remember me: 保存邮箱（密码不保存）
-      // Not Remember me: 清除任何之前保存的邮箱
+      // Remember me on → store the email (never the password).
+      // Remember me off → wipe any previously remembered email.
       if (rememberMe) {
         localStorage.setItem(REMEMBERED_EMAIL_KEY, email);
       } else {

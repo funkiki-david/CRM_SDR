@@ -1,15 +1,15 @@
 /**
- * Finder Page — 两层结构（参考 Apollo.io）
+ * Finder Page — two-tier search UI inspired by Apollo.io.
  *
- *  Primary Search (主搜索区，白色，始终可见):
+ *  Primary Search (white, always visible):
  *    - Company Name / Company Domain / Keywords / LinkedIn URL / Person Name
- *    - State (多选) + City 与搜索按钮同行
- *    - 至少填一个才能搜
+ *    - State (multi-select) + City inline with the search button
+ *    - At least one field must be filled before searching
  *
- *  AI Keyword Finder (灰色，默认折叠):
- *    - 用户输入行业/类型描述 → Claude Haiku 生成 industries + keywords
- *    - 勾选后 Apply 用作 Apollo 搜索过滤
- *    - Applied 标签显示在搜索区上方，✕ 可清除
+ *  AI Keyword Finder (grey, collapsed by default):
+ *    - User describes the industry / type → Claude Haiku returns industries + keywords
+ *    - Selecting + Apply uses them as additional Apollo filters
+ *    - Applied chips show above the search area; ✕ clears them
  */
 "use client";
 
@@ -127,14 +127,14 @@ export default function FinderPage() {
   const [importing, setImporting] = useState(false);
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
 
-  // === Primary Search 至少填一个 ===
+  // === At least one Primary Search field must be filled ===
   const hasPrimaryInput = Boolean(
     companyName.trim() || domain.trim() || keywords.trim() ||
     linkedinUrl.trim() || personName.trim() ||
     selectedStates.length > 0 || city.trim()
   );
 
-  // === 有任何 AI 关键词被 Apply ===
+  // === Whether any AI keyword has been Applied ===
   const hasAppliedAi = appliedIndustries.length > 0 || appliedKeywords.length > 0;
 
   async function handleSearch(
@@ -151,7 +151,7 @@ export default function FinderPage() {
     if (companyName.trim()) filters.q_organization_name = companyName.trim();
     if (domain.trim()) filters.company_domain = domain.trim();
     const primaryKeywordTags = keywords.split(",").map(k => k.trim()).filter(Boolean);
-    // LinkedIn URL + Person Name 都走 Apollo 的 free-text q_keywords
+    // LinkedIn URL + Person Name both feed Apollo's free-text q_keywords field
     const freeTextParts = [linkedinUrl.trim(), personName.trim()].filter(Boolean);
     if (freeTextParts.length > 0) filters.q_keywords = freeTextParts.join(" ");
 

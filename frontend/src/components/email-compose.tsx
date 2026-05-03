@@ -90,14 +90,14 @@ export default function EmailCompose({
 
     templatesApi.list().then(setTemplates).catch(() => {});
     emailsApi.listAccounts().then((accs: EmailAccount[]) => {
-      // 只列 active 账号 —— 停用的不给发
+      // Only list active accounts — inactive accounts can't be used to send.
       const active = accs.filter(a => a.is_active);
       setAccounts(active);
       if (active.length === 0) {
         setSelectedAccountId(null);
         return;
       }
-      // 优先用上次选的账号（持久化在 localStorage）
+      // Prefer the last-used account (persisted in localStorage).
       const lastId = typeof window !== "undefined"
         ? Number(localStorage.getItem(LAST_ACCOUNT_KEY)) || null
         : null;
@@ -107,7 +107,7 @@ export default function EmailCompose({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // 选择变化时持久化
+  // Persist on change.
   function handleAccountChange(accountId: number) {
     setSelectedAccountId(accountId);
     if (typeof window !== "undefined") {
