@@ -45,8 +45,7 @@ app = FastAPI(
 # Whitelist approach: keep credentials=True (browsers reject * + credentials combo)
 _origins = [
     "http://localhost:3000",
-    "https://zealous-enjoyment-production.up.railway.app",
-    "https://crm-frontend-production.up.railway.app",
+    "https://crmsdr-production.up.railway.app",
     "https://natural-generosity-production.up.railway.app",
 ]
 # 可选：FRONTEND_URL 环境变量追加额外 origin
