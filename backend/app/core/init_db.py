@@ -134,25 +134,67 @@ async def init_db():
         for sql in field_migrations:
             await conn.execute(text(sql))
 
-    # 创建默认 Admin 用户（如果还没有的话）
-    async with async_session() as session:
-        from sqlalchemy import select
-        result = await session.execute(
-            select(User).where(User.role == UserRole.ADMIN)
-        )
-        admin = result.scalar_one_or_none()
+    # === Seed initial users (idempotent: skip if email already exists) ===
+    # Single source of truth for the team accounts. Adding a row here will
+    # create the user on next deploy; existing users are left untouched
+    # (password / role changes through the UI are preserved).
+    # `team` is informational only — the User model has no team column.
+    seed_users = [
+        {
+            "email": "info@amazonsolutions.us",
+            "password": "admin123",
+            "full_name": "David Zheng",
+            "role": UserRole.ADMIN,
+            "team": "Amazon Solutions",
+        },
+        {
+            "email": "marketing@graphictac.biz",
+            "password": "admin123",
+            "full_name": "GT Marketing",
+            "role": UserRole.MANAGER,
+            "team": "GT Marketing",
+        },
+        {
+            "email": "graphictac.doug@gmail.com",
+            "password": "admin123",
+            "full_name": "GT Doug",
+            "role": UserRole.MANAGER,
+            "team": "GT Marketing",
+        },
+        {
+            "email": "graphictac.steve@gmail.com",
+            "password": "admin123",
+            "full_name": "GT Steve",
+            "role": UserRole.MANAGER,
+            "team": "GT Marketing",
+        },
+        {
+            "email": "Graphictac.usa@gmail.com",
+            "password": "admin123",
+            "full_name": "Graphictac USA",
+            "role": UserRole.MANAGER,
+            "team": "GT Marketing",
+        },
+    ]
 
-        if admin is None:
-            # 第一次启动，创建 David 的 Admin 账号
-            admin = User(
-                email="info@amazonsolutions.us",
-                hashed_password=hash_password("admin123"),  # 首次登录后请改密码！
-                full_name="David Zheng",
-                role=UserRole.ADMIN,
-                is_active=True,
+    async with async_session() as session:
+        from sqlalchemy import select, func
+        for spec in seed_users:
+            # Case-insensitive lookup — Postgres email values are stored
+            # exactly as inserted, but humans type them with random casing.
+            existing = await session.execute(
+                select(User).where(func.lower(User.email) == spec["email"].lower())
             )
-            session.add(admin)
-            await session.commit()
-            print("✅ 默认 Admin 账号已创建: info@amazonsolutions.us / admin123")
-        else:
-            print("✅ Admin 账号已存在，跳过创建")
+            if existing.scalar_one_or_none() is not None:
+                print(f"[seed] {spec['email']} already exists — skip")
+                continue
+
+            session.add(User(
+                email=spec["email"],
+                hashed_password=hash_password(spec["password"]),
+                full_name=spec["full_name"],
+                role=spec["role"],
+                is_active=True,
+            ))
+            print(f"[seed] created {spec['role'].value}: {spec['email']} / {spec['password']}")
+        await session.commit()
