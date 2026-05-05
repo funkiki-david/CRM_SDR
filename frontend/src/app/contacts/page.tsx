@@ -23,6 +23,7 @@ import { EditableField } from "@/components/editable-field";
 import EditActivity from "@/components/edit-activity";
 import { contactsApi, activitiesApi, aiApi, tasksApi } from "@/lib/api";
 import ActivityComments from "@/components/social/activity-comments";
+import TeamNotes from "@/components/social/team-notes";
 import { MOCK_TIMELINE_ACTIVITIES } from "@/lib/social-mock";
 
 // === Type definitions ===
@@ -1009,6 +1010,9 @@ function ContactsContent() {
               </Card>
 
               <Separator />
+
+              {/* --- Team Notes (internal post-its for the team) --- */}
+              <TeamNotes contactId={selectedContact.id} />
 
               {/* --- Activity Timeline --- */}
               <div>
