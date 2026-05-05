@@ -25,3 +25,6 @@ pgdata/
 # === Backups (本地备份，不 commit)===
 backups/
 *.sql.gz
+
+# Local backups (timestamp-suffixed)
+*.bak-*

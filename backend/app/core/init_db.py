@@ -143,38 +143,40 @@ async def init_db():
         {
             "email": "info@amazonsolutions.us",
             "password": "admin123",
-            "full_name": "David Zheng",
+            "full_name": "David Admin",
             "role": UserRole.ADMIN,
             "team": "Amazon Solutions",
         },
         {
             "email": "marketing@graphictac.biz",
             "password": "admin123",
-            "full_name": "GT Marketing",
+            "full_name": "David Marketing",
             "role": UserRole.MANAGER,
             "team": "GT Marketing",
         },
         {
             "email": "graphictac.doug@gmail.com",
             "password": "admin123",
-            "full_name": "GT Doug",
+            "full_name": "Doug",
             "role": UserRole.MANAGER,
             "team": "GT Marketing",
         },
         {
             "email": "graphictac.steve@gmail.com",
             "password": "admin123",
-            "full_name": "GT Steve",
+            "full_name": "Steve",
             "role": UserRole.MANAGER,
             "team": "GT Marketing",
         },
-        {
-            "email": "Graphictac.usa@gmail.com",
-            "password": "admin123",
-            "full_name": "Graphictac USA",
-            "role": UserRole.MANAGER,
-            "team": "GT Marketing",
-        },
+        # Disabled 2026-05-05: Graphictac.usa@gmail.com not currently in use.
+        # Uncomment to re-enable. full_name reflects shared account for Amie & Alex.
+        # {
+        #     "email": "Graphictac.usa@gmail.com",
+        #     "password": "admin123",
+        #     "full_name": "Amie & Alex",
+        #     "role": UserRole.MANAGER,
+        #     "team": "GT Marketing",
+        # },
     ]
 
     async with async_session() as session:
