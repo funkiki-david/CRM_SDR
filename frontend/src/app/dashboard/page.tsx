@@ -207,28 +207,26 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <div className="max-w-7xl mx-auto px-6 py-6 space-y-5">
-        {/* === Greeting header + Credits chip (Phase B + social mockup) === */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1
-              className="font-display font-bold text-slate-900"
-              style={{ fontSize: 32, lineHeight: 1.15 }}
-            >
-              {greeting}, {firstName}
-            </h1>
-            <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-              {today}
-              {overdueCount > 0 && (
-                <>
-                  {" — You have "}
-                  <span style={{ color: "var(--brand-red)", fontWeight: 600 }}>
-                    {overdueCount} overdue follow-up{overdueCount === 1 ? "" : "s"}
-                  </span>
-                </>
-              )}
-            </p>
-          </div>
-          <CreditsChip credits={myCredits} />
+        {/* === Greeting header (Phase B). CreditsChip moved to right-column
+            TeamZone so the greeting stays clean — see right column below. */}
+        <div>
+          <h1
+            className="font-display font-bold text-slate-900"
+            style={{ fontSize: 32, lineHeight: 1.15 }}
+          >
+            {greeting}, {firstName}
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+            {today}
+            {overdueCount > 0 && (
+              <>
+                {" — You have "}
+                <span style={{ color: "var(--brand-red)", fontWeight: 600 }}>
+                  {overdueCount} overdue follow-up{overdueCount === 1 ? "" : "s"}
+                </span>
+              </>
+            )}
+          </p>
         </div>
 
         {/* === Inline stat chips (Phase B) === */}
@@ -236,7 +234,7 @@ export default function DashboardPage() {
 
         {/* === 60 / 40 two-column === */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* Left: 60% (3/5) — Follow-Ups + Team Feed + Activity Feed */}
+          {/* Left: 60% (3/5) — Follow-Ups + Activity Feed (主功能区，无社交内容) */}
           <div className="lg:col-span-3 space-y-6">
             <FollowUpsSection
               loading={loadingFollowUps}
@@ -244,14 +242,19 @@ export default function DashboardPage() {
               onRefresh={loadFollowUps}
               onEmail={openEmail}
             />
-            <TeamFeed onSendCredits={(uid) => setSendCreditsTo(uid)} />
             <ActivityFeedSection />
           </div>
 
-          {/* Right: 40% (2/5) — AI Suggested To-Do + Leaderboard */}
+          {/* Right: 40% (2/5) — TeamZone (game zone) on top, then AI Suggestions.
+              TeamZone bundles the social/gamification elements together, visually
+              compressed so they don't compete with the main work surfaces. */}
           <div className="lg:col-span-2 space-y-6">
+            <div className="space-y-4">
+              <CreditsChip credits={myCredits} compact />
+              <TeamFeed onSendCredits={(uid) => setSendCreditsTo(uid)} />
+              <TeamLeaderboard />
+            </div>
             <AISuggestionsSection />
-            <TeamLeaderboard />
           </div>
         </div>
       </div>
@@ -347,7 +350,10 @@ function QuickStatsRow({ stats }: { stats: QuickStats | null }) {
       {/* <StatChip value={stats?.emails_today ?? 0} label="emails today" /> */}
       <StatChip value={stats?.calls_today ?? 0} label="calls today" />
       <StatChip value={stats?.meetings_this_week ?? 0} label="meetings this week" />
-      <AIBudgetChip />
+      {/* FROZEN 2026-05-05: AIBudgetChip hidden until cost-tracking UI is rebuilt.
+          Restore by uncommenting the line below. AIBudgetChip function is
+          preserved above for one-step restoration. */}
+      {/* <AIBudgetChip /> */}
     </div>
   );
 }

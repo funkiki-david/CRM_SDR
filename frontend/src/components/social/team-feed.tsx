@@ -61,12 +61,12 @@ export default function TeamFeed({ onSendCredits }: TeamFeedProps) {
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between px-5 py-4">
+      <div className="flex items-center justify-between px-4 py-3">
         <div>
-          <h2 className="font-display font-bold text-slate-900" style={{ fontSize: 18 }}>
+          <h2 className="font-display font-bold text-slate-900" style={{ fontSize: 14 }}>
             Team Feed
           </h2>
-          <p className="text-sm text-slate-500">What your team&apos;s doing right now</p>
+          <p className="text-xs text-slate-500">What your team&apos;s doing right now</p>
         </div>
         <button
           type="button"
@@ -82,15 +82,15 @@ export default function TeamFeed({ onSendCredits }: TeamFeedProps) {
           {MOCK_FEED_EVENTS.map((event) => {
             const member = findTeamMember(event.userId);
             return (
-              <li key={event.id} className="px-3 py-3 hover:bg-slate-50 rounded-xl transition-colors">
-                <div className="flex items-start gap-3">
+              <li key={event.id} className="px-2.5 py-2 hover:bg-slate-50 rounded-lg transition-colors">
+                <div className="flex items-start gap-2.5">
                   <Avatar member={member} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-slate-800 leading-snug">
+                    <p className="text-xs text-slate-800 leading-snug">
                       <span className="font-medium">{member?.name ?? "Someone"}</span>
                       <span className="text-slate-600"> {event.verb} </span>
                       <span className="font-medium text-slate-900">{event.target}</span>
-                      <span className="text-xs text-slate-400 ml-2">· {event.timeAgo}</span>
+                      <span className="text-[10px] text-slate-400 ml-1.5">· {event.timeAgo}</span>
                     </p>
                     <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
                       <EmojiBar
@@ -102,7 +102,7 @@ export default function TeamFeed({ onSendCredits }: TeamFeedProps) {
                         <button
                           type="button"
                           onClick={() => onSendCredits(member.id)}
-                          className="rounded-full px-3 py-1 text-xs font-medium border border-slate-200 hover:bg-slate-100 text-slate-700 inline-flex items-center gap-1"
+                          className="rounded-full px-2 py-0.5 text-[10px] font-medium border border-slate-200 hover:bg-slate-100 text-slate-700 inline-flex items-center gap-0.5"
                         >
                           <span aria-hidden>💎</span> Send credits
                         </button>
@@ -125,7 +125,7 @@ function Avatar({ member }: { member: ReturnType<typeof findTeamMember> }) {
   return (
     <div
       className="flex items-center justify-center rounded-full text-white font-semibold shrink-0"
-      style={{ width: 36, height: 36, fontSize: 13, background: color }}
+      style={{ width: 28, height: 28, fontSize: 11, background: color }}
       aria-hidden
     >
       {initials}

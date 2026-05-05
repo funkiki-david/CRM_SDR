@@ -18,33 +18,33 @@ export default function TeamLeaderboard() {
   });
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
-      <h2 className="font-display font-bold text-slate-900" style={{ fontSize: 18 }}>
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+      <h2 className="font-display font-bold text-slate-900" style={{ fontSize: 14 }}>
         This week&apos;s leaderboard
       </h2>
-      <p className="text-sm text-slate-500 mb-3">Ranked by stars received</p>
-      <ul className="space-y-2">
+      <p className="text-xs text-slate-500 mb-2">Ranked by stars received</p>
+      <ul className="space-y-1">
         {ranked.map((m, i) => {
           const medal = MEDALS[i] ?? "  ";
           return (
             <li
               key={m.id}
-              className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-slate-50 transition-colors"
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-slate-50 transition-colors"
             >
-              <span className="w-6 text-center text-base" aria-hidden>{medal}</span>
+              <span className="w-5 text-center text-xs" aria-hidden>{medal}</span>
               <div
                 className="flex items-center justify-center rounded-full text-white font-semibold shrink-0"
-                style={{ width: 28, height: 28, fontSize: 11, background: m.color }}
+                style={{ width: 24, height: 24, fontSize: 10, background: m.color }}
                 aria-hidden
               >
                 {m.initials}
               </div>
-              <span className="flex-1 text-sm font-medium text-slate-800">{m.name}</span>
-              <span className="text-xs text-slate-500 inline-flex items-center gap-1">
+              <span className="flex-1 text-xs font-medium text-slate-800 truncate">{m.name}</span>
+              <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5">
                 <span aria-hidden>⭐</span>
                 <span className="tabular-nums font-medium text-slate-700">{m.starsThisWeek}</span>
               </span>
-              <span className="text-xs text-slate-500 inline-flex items-center gap-1 ml-2">
+              <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5 ml-1">
                 <span aria-hidden>💎</span>
                 <span className="tabular-nums font-medium text-slate-700">+{m.creditsThisWeek}</span>
               </span>
