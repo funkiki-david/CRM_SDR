@@ -24,6 +24,8 @@ import { useAIBudget } from "@/components/ai-budget";
 import TeamFeed from "@/components/social/team-feed";
 import CreditsChip from "@/components/social/credits-chip";
 import TeamLeaderboard from "@/components/social/team-leaderboard";
+import SendCreditsModal from "@/components/social/send-credits-modal";
+import CreditsToast from "@/components/social/credits-toast";
 import { findTeamMember, CURRENT_USER_ID } from "@/lib/team-mock";
 
 // ==================== Types ====================
@@ -148,13 +150,20 @@ export default function DashboardPage() {
     id: 0, name: "", email: null,
   });
 
-  // Social mockup — current user's virtual credit balance lives in page
-  // state so Send-Credits (Commit 5) can decrement it.
+  // Social mockup — current user's virtual credit balance + Send-Credits state.
   const [myCredits, setMyCredits] = useState(
     () => findTeamMember(CURRENT_USER_ID)?.credits ?? 0
   );
-  // Suppress unused-warning until Commit 5 wires the setter to Send-Credits.
-  void setMyCredits;
+  const [sendCreditsTo, setSendCreditsTo] = useState<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  function handleSendCredits(recipientUserId: number, amount: number, message: string) {
+    const recipient = findTeamMember(recipientUserId);
+    setMyCredits((c) => c - amount);
+    setSendCreditsTo(null);
+    const msgFragment = message ? ` — "${message}"` : "";
+    setToastMessage(`💎 Sent ${amount} credits to ${recipient?.name ?? "teammate"}${msgFragment}`);
+  }
 
   const loadFollowUps = useCallback(async () => {
     setLoadingFollowUps(true);
@@ -231,7 +240,7 @@ export default function DashboardPage() {
               onRefresh={loadFollowUps}
               onEmail={openEmail}
             />
-            <TeamFeed />
+            <TeamFeed onSendCredits={(uid) => setSendCreditsTo(uid)} />
             <ActivityFeedSection />
           </div>
 
@@ -260,6 +269,14 @@ export default function DashboardPage() {
         contactEmail={emailContext.email}
         onSuccess={() => setEmailComposeOpen(false)}
       />
+      {/* Social mockup — single Send Credits modal serves Team Feed clicks */}
+      <SendCreditsModal
+        recipientUserId={sendCreditsTo}
+        balance={myCredits}
+        onSend={handleSendCredits}
+        onClose={() => setSendCreditsTo(null)}
+      />
+      <CreditsToast message={toastMessage} onClose={() => setToastMessage(null)} />
     </AppShell>
   );
 }

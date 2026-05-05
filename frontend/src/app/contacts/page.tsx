@@ -24,7 +24,10 @@ import EditActivity from "@/components/edit-activity";
 import { contactsApi, activitiesApi, aiApi, tasksApi } from "@/lib/api";
 import ActivityComments from "@/components/social/activity-comments";
 import TeamNotes from "@/components/social/team-notes";
+import SendCreditsModal from "@/components/social/send-credits-modal";
+import CreditsToast from "@/components/social/credits-toast";
 import { MOCK_TIMELINE_ACTIVITIES } from "@/lib/social-mock";
+import { findTeamMember, CURRENT_USER_ID } from "@/lib/team-mock";
 
 // === Type definitions ===
 
@@ -245,6 +248,20 @@ function ContactsContent() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+
+  // Social mockup — Send Credits modal state.
+  const [myCredits, setMyCredits] = useState(
+    () => findTeamMember(CURRENT_USER_ID)?.credits ?? 0
+  );
+  const [sendCreditsTo, setSendCreditsTo] = useState<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  function handleSendCredits(recipientUserId: number, amount: number, message: string) {
+    const recipient = findTeamMember(recipientUserId);
+    setMyCredits((c) => c - amount);
+    setSendCreditsTo(null);
+    const msgFragment = message ? ` — "${message}"` : "";
+    setToastMessage(`💎 Sent ${amount} credits to ${recipient?.name ?? "teammate"}${msgFragment}`);
+  }
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1012,7 +1029,10 @@ function ContactsContent() {
               <Separator />
 
               {/* --- Team Notes (internal post-its for the team) --- */}
-              <TeamNotes contactId={selectedContact.id} />
+              <TeamNotes
+                contactId={selectedContact.id}
+                onSendCredits={(uid) => setSendCreditsTo(uid)}
+              />
 
               {/* --- Activity Timeline --- */}
               <div>
@@ -1095,7 +1115,10 @@ function ContactsContent() {
                         )}
                         </div>
                         {/* Social toolbar — stars + reactions + comments */}
-                        <ActivityComments activityId={activity.id} />
+                        <ActivityComments
+                          activityId={activity.id}
+                          onSendCredits={(uid) => setSendCreditsTo(uid)}
+                        />
                       </div>
                     ))}
                   </div>
@@ -1232,6 +1255,15 @@ function ContactsContent() {
           setActivities(prev => prev.map(a => a.id === updated.id ? updated as Activity : a));
         }}
       />
+
+      {/* Social mockup — Send Credits modal + toast (shared by ActivityComments + TeamNotes) */}
+      <SendCreditsModal
+        recipientUserId={sendCreditsTo}
+        balance={myCredits}
+        onSend={handleSendCredits}
+        onClose={() => setSendCreditsTo(null)}
+      />
+      <CreditsToast message={toastMessage} onClose={() => setToastMessage(null)} />
     </AppShell>
   );
 }
