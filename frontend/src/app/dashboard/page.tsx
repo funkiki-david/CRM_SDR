@@ -21,6 +21,10 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { dashboardApi, activitiesApi, aiApi, authApi, tasksApi } from "@/lib/api";
 import { useAIBudget } from "@/components/ai-budget";
+import TeamFeed from "@/components/social/team-feed";
+import CreditsChip from "@/components/social/credits-chip";
+import TeamLeaderboard from "@/components/social/team-leaderboard";
+import { findTeamMember, CURRENT_USER_ID } from "@/lib/team-mock";
 
 // ==================== Types ====================
 
@@ -144,6 +148,14 @@ export default function DashboardPage() {
     id: 0, name: "", email: null,
   });
 
+  // Social mockup — current user's virtual credit balance lives in page
+  // state so Send-Credits (Commit 5) can decrement it.
+  const [myCredits, setMyCredits] = useState(
+    () => findTeamMember(CURRENT_USER_ID)?.credits ?? 0
+  );
+  // Suppress unused-warning until Commit 5 wires the setter to Send-Credits.
+  void setMyCredits;
+
   const loadFollowUps = useCallback(async () => {
     setLoadingFollowUps(true);
     try {
@@ -182,25 +194,28 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <div className="max-w-7xl mx-auto px-6 py-6 space-y-5">
-        {/* === Greeting header (Phase B) === */}
-        <div>
-          <h1
-            className="font-display font-bold text-slate-900"
-            style={{ fontSize: 32, lineHeight: 1.15 }}
-          >
-            {greeting}, {firstName}
-          </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-            {today}
-            {overdueCount > 0 && (
-              <>
-                {" — You have "}
-                <span style={{ color: "var(--brand-red)", fontWeight: 600 }}>
-                  {overdueCount} overdue follow-up{overdueCount === 1 ? "" : "s"}
-                </span>
-              </>
-            )}
-          </p>
+        {/* === Greeting header + Credits chip (Phase B + social mockup) === */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1
+              className="font-display font-bold text-slate-900"
+              style={{ fontSize: 32, lineHeight: 1.15 }}
+            >
+              {greeting}, {firstName}
+            </h1>
+            <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
+              {today}
+              {overdueCount > 0 && (
+                <>
+                  {" — You have "}
+                  <span style={{ color: "var(--brand-red)", fontWeight: 600 }}>
+                    {overdueCount} overdue follow-up{overdueCount === 1 ? "" : "s"}
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
+          <CreditsChip credits={myCredits} />
         </div>
 
         {/* === Inline stat chips (Phase B) === */}
@@ -208,7 +223,7 @@ export default function DashboardPage() {
 
         {/* === 60 / 40 two-column === */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* Left: 60% (3/5) — Follow-Ups + Activity Feed */}
+          {/* Left: 60% (3/5) — Follow-Ups + Team Feed + Activity Feed */}
           <div className="lg:col-span-3 space-y-6">
             <FollowUpsSection
               loading={loadingFollowUps}
@@ -216,12 +231,14 @@ export default function DashboardPage() {
               onRefresh={loadFollowUps}
               onEmail={openEmail}
             />
+            <TeamFeed />
             <ActivityFeedSection />
           </div>
 
-          {/* Right: 40% (2/5) — AI Suggested To-Do */}
+          {/* Right: 40% (2/5) — AI Suggested To-Do + Leaderboard */}
           <div className="lg:col-span-2 space-y-6">
             <AISuggestionsSection />
+            <TeamLeaderboard />
           </div>
         </div>
       </div>
@@ -1035,7 +1052,7 @@ function AISuggestionsSection() {
         </Button>
       </div>
       <p className="text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
-        Top {visible.length} of {suggestions.length} based on team's last 30 days of activity
+        Top {visible.length} of {suggestions.length} based on team&apos;s last 30 days of activity
         {generatedAt && !loading && (
           <span className="ml-2" style={{ color: "var(--text-muted)" }}>
             · Last updated: {timeAgo(generatedAt)}
