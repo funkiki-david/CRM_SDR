@@ -22,6 +22,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { EditableField } from "@/components/editable-field";
 import EditActivity from "@/components/edit-activity";
 import { contactsApi, activitiesApi, aiApi, tasksApi } from "@/lib/api";
+import ActivityComments from "@/components/social/activity-comments";
+import { MOCK_TIMELINE_ACTIVITIES } from "@/lib/social-mock";
 
 // === Type definitions ===
 
@@ -1015,17 +1017,22 @@ function ContactsContent() {
                 </h3>
                 {activitiesLoading ? (
                   <p className="text-sm text-gray-400">Loading activities...</p>
-                ) : activities.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic">
-                    No activities recorded yet.
-                  </p>
                 ) : (
+                  // Social mockup \u00A73.4: empty real list \u2192 fall back to
+                  // MOCK_TIMELINE_ACTIVITIES so the comments / reactions
+                  // toolbar has rows to demonstrate.
                   <div className="space-y-3">
-                    {activities.map((activity) => (
+                    {activities.length === 0 && (
+                      <p className="text-xs text-slate-400 italic">
+                        No activities recorded yet \u2014 showing a sample timeline so you can preview teammate reactions.
+                      </p>
+                    )}
+                    {(activities.length === 0 ? MOCK_TIMELINE_ACTIVITIES : activities).map((activity) => (
                       <div
                         key={activity.id}
-                        className="group flex items-start gap-3 p-3 rounded-md bg-gray-50 relative"
+                        className="group p-3 rounded-md bg-gray-50 relative"
                       >
+                        <div className="flex items-start gap-3">
                         <span className="text-base mt-0.5">
                           {activityIcons[activity.activity_type] || "\uD83D\uDCCB"}
                         </span>
@@ -1054,31 +1061,37 @@ function ContactsContent() {
                             </p>
                           )}
                         </div>
-                        {/* Edit / Delete (Problem 3) — appear on hover */}
-                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                          <button
-                            onClick={() => setEditingActivity(activity)}
-                            title="Edit activity"
-                            className="text-slate-400 hover:text-slate-600 text-xs px-1"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            onClick={async () => {
-                              if (!confirm("Delete this activity? This cannot be undone.")) return;
-                              try {
-                                await activitiesApi.delete(activity.id);
-                                setActivities(prev => prev.filter(a => a.id !== activity.id));
-                              } catch (e) {
-                                alert(e instanceof Error ? e.message : "Delete failed");
-                              }
-                            }}
-                            title="Delete activity"
-                            className="text-slate-400 hover:text-slate-600 text-xs px-1"
-                          >
-                            🗑️
-                          </button>
+                        {/* Edit / Delete (Problem 3) — appear on hover.
+                            Hidden for mock rows (id < 0). */}
+                        {activity.id >= 0 && (
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                            <button
+                              onClick={() => setEditingActivity(activity as Activity)}
+                              title="Edit activity"
+                              className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!confirm("Delete this activity? This cannot be undone.")) return;
+                                try {
+                                  await activitiesApi.delete(activity.id);
+                                  setActivities(prev => prev.filter(a => a.id !== activity.id));
+                                } catch (e) {
+                                  alert(e instanceof Error ? e.message : "Delete failed");
+                                }
+                              }}
+                              title="Delete activity"
+                              className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        )}
                         </div>
+                        {/* Social toolbar — stars + reactions + comments */}
+                        <ActivityComments activityId={activity.id} />
                       </div>
                     ))}
                   </div>
