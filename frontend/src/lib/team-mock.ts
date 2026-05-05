@@ -27,8 +27,8 @@ export const TEAM_MEMBERS: TeamMember[] = [
   { id: 2, name: "David Marketing", initials: "DM", color: "#3b82f6", credits: 1240, starsThisWeek: 18, creditsThisWeek: 145 },
   { id: 3, name: "Doug",            initials: "DG", color: "#10b981", credits: 1100, starsThisWeek: 15, creditsThisWeek: 120 },
   { id: 4, name: "Steve",           initials: "ST", color: "#8b5cf6", credits: 980,  starsThisWeek: 12, creditsThisWeek: 95  },
-  { id: 5, name: "GT Film Sales",   initials: "GF", color: "#ef4444", credits: 720,  starsThisWeek: 9,  creditsThisWeek: 60  },
-  { id: 6, name: "Graphictac USA",  initials: "GU", color: "#0ea5e9", credits: 540,  starsThisWeek: 6,  creditsThisWeek: 40  },
+  { id: 5, name: "Amie",            initials: "AM", color: "#ef4444", credits: 720,  starsThisWeek: 9,  creditsThisWeek: 60  },
+  { id: 6, name: "Alex Amie",       initials: "AA", color: "#0ea5e9", credits: 540,  starsThisWeek: 6,  creditsThisWeek: 40  },
 ];
 
 /** "Self" identity used to choose between teammate vs own UI. David Admin = id 1. */
@@ -38,7 +38,7 @@ export function findTeamMember(id: number): TeamMember | undefined {
   return TEAM_MEMBERS.find((m) => m.id === id);
 }
 
-/** Display label "David Admin, Doug, GT Film Sales" used by star-rating tooltips etc. */
+/** Display label "David Admin, Doug, Amie" used by star-rating tooltips etc. */
 export function namesFromIds(ids: number[]): string {
   return ids
     .map((id) => findTeamMember(id)?.name)

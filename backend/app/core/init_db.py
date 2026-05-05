@@ -169,11 +169,12 @@ async def init_db():
             "team": "GT Marketing",
         },
         # Disabled 2026-05-05: Graphictac.usa@gmail.com not currently in use.
-        # Uncomment to re-enable. full_name reflects shared account for Amie & Alex.
+        # Uncomment to re-enable. Shared login for Alex + Amie; the live DB
+        # row already exists with full_name "Alex Amie".
         # {
         #     "email": "Graphictac.usa@gmail.com",
         #     "password": "admin123",
-        #     "full_name": "Amie & Alex",
+        #     "full_name": "Alex Amie",
         #     "role": UserRole.MANAGER,
         #     "team": "GT Marketing",
         # },
