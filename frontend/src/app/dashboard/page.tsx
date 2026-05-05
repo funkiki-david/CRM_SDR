@@ -183,6 +183,10 @@ export default function DashboardPage() {
     loadFollowUps();
   }, [loadFollowUps]);
 
+  // FROZEN 2026-05-05: openEmail kept for prop compatibility with
+  // FollowUpsSection / FollowUpGroup / FollowUpCard. The Email button itself
+  // is no longer rendered; EmailCompose dialog state preserved for one-step
+  // restoration when the email feature is developed.
   const openEmail = (fu: FollowUp) => {
     setEmailContext({ id: fu.contact_id, name: fu.contact_name, email: fu.contact_email });
     setEmailComposeOpen(true);
@@ -261,6 +265,9 @@ export default function DashboardPage() {
         onClose={() => setQuickEntryOpen(false)}
         onSuccess={() => { setQuickEntryOpen(false); loadFollowUps(); }}
       />
+      {/* FROZEN 2026-05-05: EmailCompose dialog mount preserved (never opens
+          while no UI triggers setEmailComposeOpen(true)) so unfreezing is a
+          one-line edit. Safe to keep — all email send buttons are hidden. */}
       <EmailCompose
         open={emailComposeOpen}
         onClose={() => setEmailComposeOpen(false)}
@@ -336,7 +343,8 @@ function QuickStatsRow({ stats }: { stats: QuickStats | null }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       <StatChip value={stats?.total_contacts ?? "—"} label="contacts" />
-      <StatChip value={stats?.emails_today ?? 0} label="emails today" />
+      {/* FROZEN 2026-05-05: emails_today stat hidden until email feature is developed. */}
+      {/* <StatChip value={stats?.emails_today ?? 0} label="emails today" /> */}
       <StatChip value={stats?.calls_today ?? 0} label="calls today" />
       <StatChip value={stats?.meetings_this_week ?? 0} label="meetings this week" />
       <AIBudgetChip />

@@ -684,15 +684,21 @@ function ContactsContent() {
                         </Button>
                       );
                     })()}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled
-                      title="Email sending paused"
-                      className="cursor-not-allowed bg-slate-100 text-slate-400"
-                    >
-                      Send Email
-                    </Button>
+                    {/* FROZEN 2026-05-05: Send Email button hidden until email
+                        feature is developed. Restore by deleting this comment
+                        wrapper. EmailCompose dialog mount + state are kept
+                        below so the button can be reactivated in one step. */}
+                    {false && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled
+                        title="Email sending paused"
+                        className="cursor-not-allowed bg-slate-100 text-slate-400"
+                      >
+                        Send Email
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"

@@ -29,7 +29,9 @@ const roleLabels: Record<string, string> = {
 const navLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/contacts", label: "Contacts" },
-  { href: "/emails", label: "Emails" },
+  // FROZEN 2026-05-05: Emails nav hidden until email feature is developed.
+  // Restore by uncommenting the line below.
+  // { href: "/emails", label: "Emails" },
   { href: "/finder", label: "Finder" },
   { href: "/settings", label: "Settings" },
 ];

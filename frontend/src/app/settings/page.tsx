@@ -41,7 +41,8 @@ interface MyUsage {
 
 const NAV_SECTIONS = [
   { id: "team", label: "Team" },
-  { id: "email", label: "Email" },
+  // FROZEN 2026-05-05: Email tab hidden until email feature is developed.
+  // { id: "email", label: "Email" },
   { id: "integrations", label: "Integrations" },
   { id: "budget", label: "Budget" },
   { id: "danger", label: "Danger zone" },
@@ -272,6 +273,10 @@ export default function SettingsPage() {
         </section>
 
         {/* === Email === */}
+        {/* FROZEN 2026-05-05: entire Email section hidden until email feature
+            is developed. Restore by removing the `{false && (` wrapper and
+            its closing `)}` after </section>. */}
+        {false && (
         <section id="email" className="scroll-mt-6 space-y-6">
 
         {/* === Email Accounts === */}
@@ -292,12 +297,12 @@ export default function SettingsPage() {
             {oauthMessage && (
               <div
                 className={`p-3 rounded border text-sm ${
-                  oauthMessage.ok
+                  oauthMessage!.ok
                     ? "bg-green-50 border-green-200 text-green-700"
                     : "bg-red-50 border-red-200 text-red-700"
                 }`}
               >
-                {oauthMessage.text}
+                {oauthMessage!.text}
                 <button
                   onClick={() => setOauthMessage(null)}
                   className="float-right text-xs opacity-70 hover:opacity-100"
@@ -381,6 +386,7 @@ export default function SettingsPage() {
         </Card>
 
         </section>
+        )}
 
         {/* === Integrations: Apollo + Anthropic === */}
         <section id="integrations" className="scroll-mt-6 space-y-6">

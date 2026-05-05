@@ -10,12 +10,24 @@
  */
 "use client";
 
+// FROZEN 2026-05-05: Emails page hidden until email feature is developed.
+// The default export below is a one-line redirect; the original page lives
+// verbatim further down as `function EmailsPage()`. To restore: delete the
+// FrozenRedirect default export below and re-add `export default` on
+// EmailsPage.
+import { redirect } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import AppShell from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { emailsApi } from "@/lib/api";
 import EmailCompose from "@/components/email-compose";
+
+export default function FrozenRedirect() {
+  redirect("/dashboard");
+}
+
+// === ORIGINAL PAGE BELOW — preserved for restoration ===
 
 interface MessageListItem {
   id: number;
@@ -411,10 +423,15 @@ function EmailsInner() {
   );
 }
 
-export default function EmailsPage() {
+// FROZEN 2026-05-05: was `export default function EmailsPage()` — the page
+// is preserved verbatim so restoring the email feature is a single-line edit.
+function EmailsPage() {
   return (
     <Suspense fallback={<div className="p-6 text-sm text-gray-400">Loading...</div>}>
       <EmailsInner />
     </Suspense>
   );
 }
+// Reference EmailsPage so the unused-vars rule stays quiet without
+// re-introducing it as an export.
+void EmailsPage;
