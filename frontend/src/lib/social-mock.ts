@@ -28,7 +28,7 @@ export const MOCK_FEED_EVENTS: FeedEvent[] = [
   { id: 5, userId: 2, verb: "added 12 new contacts from",  target: "ISPO Munich list",              timeAgo: "2h ago",  reactions: { "🔥": 0, "👊": 1, "⭐": 0, "💪": 0, "🎯": 0 } },
   { id: 6, userId: 3, verb: "logged a meeting with",       target: "Salomon team",                  timeAgo: "3h ago",  reactions: { "🔥": 2, "👊": 0, "⭐": 1, "💪": 0, "🎯": 0 } },
   { id: 7, userId: 4, verb: "advanced",                    target: "Rossignol → Price negotiation", timeAgo: "4h ago",  reactions: { "🔥": 1, "👊": 1, "⭐": 0, "💪": 0, "🎯": 0 } },
-  { id: 8, userId: 1, verb: "received PO from",            target: "Atomic Skis",                   timeAgo: "5h ago",  reactions: { "🔥": 5, "👊": 4, "⭐": 3, "💪": 2, "🎯": 1 } },
+  { id: 8, userId: 6, verb: "received PO from",            target: "Atomic Skis",                   timeAgo: "5h ago",  reactions: { "🔥": 5, "👊": 4, "⭐": 3, "💪": 2, "🎯": 1 } },
 ];
 
 // === Activity social state (Contact timeline) =============================
@@ -82,7 +82,7 @@ export const MOCK_TIMELINE_ACTIVITIES: MockActivity[] = [
     id: -1002,
     activity_type: "email",
     created_at: new Date(Date.now() - 26 * 3600_000).toISOString(),
-    user_name: "David",
+    user_name: "David Admin",
     subject: "Re: Bulk order pricing tier",
     content: "Sent the revised tier sheet — they hinted at 1500-unit volume next quarter.",
   },
@@ -90,7 +90,7 @@ export const MOCK_TIMELINE_ACTIVITIES: MockActivity[] = [
     id: -1003,
     activity_type: "meeting",
     created_at: new Date(Date.now() - 3 * 24 * 3600_000).toISOString(),
-    user_name: "Duck",
+    user_name: "Doug",
     subject: "Onsite at their warehouse",
     content: "Walked through their racking. They want our stickers preprinted with SKUs.",
   },
@@ -98,7 +98,7 @@ export const MOCK_TIMELINE_ACTIVITIES: MockActivity[] = [
     id: -1004,
     activity_type: "note",
     created_at: new Date(Date.now() - 5 * 24 * 3600_000).toISOString(),
-    user_name: "Amy",
+    user_name: "GT Film Sales",
     subject: "Decision-maker note",
     content: "Their CFO is the actual budget owner — Mitch only signs off after she greenlights.",
   },
@@ -106,7 +106,7 @@ export const MOCK_TIMELINE_ACTIVITIES: MockActivity[] = [
     id: -1005,
     activity_type: "linkedin",
     created_at: new Date(Date.now() - 7 * 24 * 3600_000).toISOString(),
-    user_name: "Alex",
+    user_name: "Graphictac USA",
     subject: "InMail reply",
     content: "Connected after my second InMail. Mentioned they're evaluating two competitors right now.",
   },
@@ -223,11 +223,11 @@ export interface CreditEntry {
 }
 
 export const MOCK_CREDIT_LEDGER: CreditEntry[] = [
-  { id: 1, amount: 50,  reason: 'Amy sent you "Great call!"',     timeAgo: "2h ago"  },
-  { id: 2, amount: 25,  reason: "Duck starred your follow-up",    timeAgo: "4h ago"  },
-  { id: 3, amount: 10,  reason: "Steve 🔥 your timeline comment", timeAgo: "1d ago"  },
-  { id: 4, amount: -30, reason: 'You sent Steve "Closer king"',   timeAgo: "1d ago"  },
-  { id: 5, amount: 50,  reason: "Daily login bonus",              timeAgo: "2d ago"  },
+  { id: 1, amount: 50,  reason: 'David Marketing sent you "Great call!"',  timeAgo: "2h ago"  },
+  { id: 2, amount: 25,  reason: "Doug starred your follow-up",             timeAgo: "4h ago"  },
+  { id: 3, amount: 10,  reason: "Steve 🔥 your timeline comment",          timeAgo: "1d ago"  },
+  { id: 4, amount: -30, reason: 'You sent Steve "Closer king"',            timeAgo: "1d ago"  },
+  { id: 5, amount: 50,  reason: "Daily login bonus",                       timeAgo: "2d ago"  },
 ];
 
 /** Today-wide team activity counter shown in the weekly stats chip. */
