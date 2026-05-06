@@ -834,12 +834,18 @@ function ContactsContent() {
                 </div>
               </div>
 
-              {/* --- Industry Tags --- */}
-              {selectedContact.ai_tags && (
+              {/* FROZEN 2026-05-06: Industry Tags section hidden — not actively
+                  used yet. Data fetching + parseTags helper are kept; this only
+                  hides the visual section. Restore by changing `false` to `true`.
+                  Non-null assertions on selectedContact are sound — TypeScript
+                  loses narrowing through the `false &&` dead-code wrapper, but
+                  the runtime value comes from the outer `{selectedContact && (...)}`
+                  detail-panel guard further up. */}
+              {false && selectedContact!.ai_tags && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Tags</h3>
                   <div className="flex flex-wrap gap-1.5">
-                    {parseTags(selectedContact.ai_tags).map((tag, i) => (
+                    {parseTags(selectedContact!.ai_tags).map((tag, i) => (
                       <Badge key={i} variant="secondary" className="text-xs">
                         {tag}
                       </Badge>
@@ -848,10 +854,11 @@ function ContactsContent() {
                 </div>
               )}
 
-              {/* --- Notes (inline editable multiline) --- */}
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Notes</h3>
-                <div className="text-sm text-gray-700 whitespace-pre-wrap">
+              {/* Notes — inline single-line label like City/State (compacted 2026-05-06).
+                  Hidden when empty. EditableField stays so click-to-edit still works. */}
+              <div className="flex items-start gap-2 text-sm">
+                <span className="text-slate-500 shrink-0 pt-0.5">Notes:</span>
+                <span className="text-slate-800 flex-1 min-w-0">
                   <EditableField
                     value={selectedContact.notes}
                     onSave={(v) => updateField("notes", v)}
@@ -862,52 +869,24 @@ function ContactsContent() {
                     className="block w-full"
                     inputClassName="w-full min-h-[5rem]"
                   />
-                </div>
+                </span>
               </div>
 
               <Separator />
 
-              {/* --- AI Person Research Report --- */}
-              <Card>
-                <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="text-sm font-medium text-gray-700">
-                      Person Report
-                    </CardTitle>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {selectedContact.ai_person_generated_at && (
-                        <p className="text-xs text-gray-400">
-                          {relativeDays(selectedContact.ai_person_generated_at)}
-                          {selectedContact.ai_report_model
-                            ? ` · ${selectedContact.ai_report_model.replace("-20251001", "")}`
-                            : ""}
-                        </p>
-                      )}
-                      <AIBudgetBadge usage={aiUsage} compact />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {selectedContact.ai_person_report && (
-                      <button
-                        onClick={async () => {
-                          if (!confirm("Delete this report? You can regenerate it later.")) return;
-                          await aiApi.deletePersonReport(selectedContact.id);
-                          setSelectedContact({
-                            ...selectedContact,
-                            ai_person_report: null,
-                            ai_person_generated_at: null,
-                          });
-                        }}
-                        title="Delete report"
-                        className="text-slate-400 hover:text-slate-600 text-xs px-1"
-                      >
-                        🗑️
-                      </button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs h-7"
+              {/* AI Reports — merged 2026-05-06. Two compact buttons in a single
+                  card; budget meter + filler description sentences removed. */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <h3
+                    className="font-display font-bold text-slate-900"
+                    style={{ fontSize: 14 }}
+                  >
+                    AI Reports
+                  </h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
                       disabled={generatingPersonReport || aiUsage?.at_limit}
                       onClick={async () => {
                         if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
@@ -931,67 +910,16 @@ function ContactsContent() {
                         }
                         setGeneratingPersonReport(false);
                       }}
+                      className="rounded-full px-3 py-1 text-xs font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
                     >
-                      {generatingPersonReport ? "Generating..." : selectedContact.ai_person_report ? "🔄 Regenerate" : "Generate"}
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {generatingPersonReport ? (
-                    <p className="text-sm text-gray-400 animate-pulse">AI is researching this person...</p>
-                  ) : selectedContact.ai_person_report ? (
-                    <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                      {selectedContact.ai_person_report}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-400 italic">
-                      Click &quot;Generate&quot; to create an AI research report.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* --- AI Company Research Report --- */}
-              <Card>
-                <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                  <div>
-                    <CardTitle className="text-sm font-medium text-gray-700">
-                      Company Report
-                    </CardTitle>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {selectedContact.ai_company_generated_at && (
-                        <p className="text-xs text-gray-400">
-                          {relativeDays(selectedContact.ai_company_generated_at)}
-                          {selectedContact.ai_report_model
-                            ? ` · ${selectedContact.ai_report_model.replace("-20251001", "")}`
-                            : ""}
-                        </p>
-                      )}
-                      <AIBudgetBadge usage={aiUsage} compact />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {selectedContact.ai_company_report && (
-                      <button
-                        onClick={async () => {
-                          if (!confirm("Delete this report? You can regenerate it later.")) return;
-                          await aiApi.deleteCompanyReport(selectedContact.id);
-                          setSelectedContact({
-                            ...selectedContact,
-                            ai_company_report: null,
-                            ai_company_generated_at: null,
-                          });
-                        }}
-                        title="Delete report"
-                        className="text-slate-400 hover:text-slate-600 text-xs px-1"
-                      >
-                        🗑️
-                      </button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs h-7"
+                      {generatingPersonReport
+                        ? "Generating..."
+                        : selectedContact.ai_person_report
+                          ? "🔄 Person"
+                          : "Generate Person"}
+                    </button>
+                    <button
+                      type="button"
                       disabled={generatingCompanyReport || aiUsage?.at_limit}
                       onClick={async () => {
                         if (aiUsage?.at_limit) { setShowLimitModal(true); return; }
@@ -1014,31 +942,84 @@ function ContactsContent() {
                         }
                         setGeneratingCompanyReport(false);
                       }}
+                      className="rounded-full px-3 py-1 text-xs font-medium border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                     >
-                      {generatingCompanyReport ? "Generating..." : selectedContact.ai_company_report ? "🔄 Regenerate" : "Generate"}
-                    </Button>
+                      {generatingCompanyReport
+                        ? "Generating..."
+                        : selectedContact.ai_company_report
+                          ? "🔄 Company"
+                          : "Generate Company"}
+                    </button>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {generatingCompanyReport ? (
-                    <p className="text-sm text-gray-400 animate-pulse">AI is researching this company...</p>
-                  ) : selectedContact.ai_company_report ? (
-                    <CompanyReportBody report={selectedContact.ai_company_report} />
-                  ) : (
-                    <p className="text-sm text-gray-400 italic">
-                      Click &quot;Generate&quot; to create an AI company analysis.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+                </div>
+
+                {/* Generated content — only renders when a report exists */}
+                {(generatingPersonReport || selectedContact.ai_person_report) && (
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-semibold text-slate-500">Person Report</p>
+                      {selectedContact.ai_person_report && !generatingPersonReport && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirm("Delete this report? You can regenerate it later.")) return;
+                            await aiApi.deletePersonReport(selectedContact.id);
+                            setSelectedContact({
+                              ...selectedContact,
+                              ai_person_report: null,
+                              ai_person_generated_at: null,
+                            });
+                          }}
+                          title="Delete report"
+                          className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
+                    {generatingPersonReport ? (
+                      <p className="text-sm text-gray-400 animate-pulse">AI is researching this person...</p>
+                    ) : (
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                        {selectedContact.ai_person_report}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {(generatingCompanyReport || selectedContact.ai_company_report) && (
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-semibold text-slate-500">Company Report</p>
+                      {selectedContact.ai_company_report && !generatingCompanyReport && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirm("Delete this report? You can regenerate it later.")) return;
+                            await aiApi.deleteCompanyReport(selectedContact.id);
+                            setSelectedContact({
+                              ...selectedContact,
+                              ai_company_report: null,
+                              ai_company_generated_at: null,
+                            });
+                          }}
+                          title="Delete report"
+                          className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </div>
+                    {generatingCompanyReport ? (
+                      <p className="text-sm text-gray-400 animate-pulse">AI is researching this company...</p>
+                    ) : (
+                      <CompanyReportBody report={selectedContact.ai_company_report!} />
+                    )}
+                  </div>
+                )}
+              </div>
 
               <Separator />
-
-              {/* --- Team Notes (internal post-its for the team) --- */}
-              <TeamNotes
-                contactId={selectedContact.id}
-                onSendCredits={(uid) => setSendCreditsTo(uid)}
-              />
 
               {/* --- Activity Timeline --- */}
               <div>
@@ -1130,6 +1111,12 @@ function ContactsContent() {
                   </div>
                 )}
               </div>
+
+              {/* --- Team Notes — moved 2026-05-06 to live BELOW Activity Timeline.
+                  The timeline is the visual centre of the page; team intel sits
+                  underneath as supporting context. onSendCredits prop removed —
+                  Send-Credits stays on the Dashboard only. */}
+              <TeamNotes contactId={selectedContact.id} />
 
               {/* --- Phase C: contact-specific Suggestions panel --- */}
               <ContactSuggestions
