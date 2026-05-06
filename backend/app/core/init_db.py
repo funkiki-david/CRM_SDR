@@ -130,6 +130,22 @@ async def init_db():
             "ALTER TABLE activities ADD COLUMN IF NOT EXISTS duration_minutes INTEGER",
             # Contact lifecycle: is_active=false = archived (hidden by default).
             "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+            # 2026-05-06: Activity Comments real-functionalized.
+            # ON DELETE CASCADE on activity_id — deleting the activity wipes
+            # the thread. ON DELETE SET NULL on user_id so removing a user
+            # leaves comments visible (frontend renders "(deleted user)").
+            """
+            CREATE TABLE IF NOT EXISTS activity_comments (
+                id SERIAL PRIMARY KEY,
+                activity_id INTEGER NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                text TEXT NOT NULL,
+                previous_text TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS ix_activity_comments_activity_id_created_at ON activity_comments(activity_id, created_at)",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))

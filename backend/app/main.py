@@ -13,6 +13,7 @@ from app.core.init_db import init_db
 from app.api.routes.auth import router as auth_router
 from app.api.routes.contacts import router as contacts_router
 from app.api.routes.activities import router as activities_router
+from app.api.routes.activity_social import router as activity_social_router
 from app.api.routes.dashboard import router as dashboard_router
 # Templates router registered only to return 501 EMAIL_FROZEN on every verb
 # while the email module is frozen; `email_templates` table is preserved.
@@ -64,6 +65,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(contacts_router)
 app.include_router(activities_router)
+app.include_router(activity_social_router)
 app.include_router(dashboard_router)
 app.include_router(templates_router)  # returns 501 EMAIL_FROZEN (see templates.py)
 app.include_router(emails_router)

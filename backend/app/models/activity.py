@@ -66,3 +66,11 @@ class Activity(Base):
     # === 关系 ===
     contact: Mapped["Contact"] = relationship("Contact", back_populates="activities")
     user: Mapped["User"] = relationship("User")
+    # 2026-05-06: Activity Comments real-functionalized. CASCADE so deleting an
+    # activity also cleans up its comment thread.
+    comments: Mapped[list["ActivityComment"]] = relationship(
+        "ActivityComment",
+        back_populates="activity",
+        cascade="all, delete-orphan",
+        order_by="ActivityComment.created_at",
+    )

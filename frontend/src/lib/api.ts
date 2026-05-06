@@ -243,6 +243,44 @@ export const activitiesApi = {
     request(`/api/activities/${id}`, { method: "DELETE" }),
 };
 
+// === Activity Comments — real-functionalized 2026-05-06 ===
+// Stars (⭐⭐⭐⭐⭐) and 5-emoji reactions (🔥 👊 ⭐ 💪 🎯) remain frontend
+// mockup; only comments are backed by real DB rows + APIs.
+
+export interface ServerActivityComment {
+  id: number;
+  activity_id: number;
+  user_id: number | null;
+  user_name: string | null;
+  text: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export const activityCommentsApi = {
+  /** List comments for an activity, oldest first */
+  list: (activityId: number) =>
+    request(`/api/activities/${activityId}/comments`) as Promise<ServerActivityComment[]>,
+
+  /** Post a new comment as the current user */
+  create: (activityId: number, text: string) =>
+    request(`/api/activities/${activityId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }) as Promise<ServerActivityComment>,
+
+  /** Edit your own comment (preserves previous_text on the server for audit) */
+  update: (commentId: number, text: string) =>
+    request(`/api/activities/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ text }),
+    }) as Promise<ServerActivityComment>,
+
+  /** Delete a comment (author or admin only) */
+  remove: (commentId: number) =>
+    request(`/api/activities/comments/${commentId}`, { method: "DELETE" }),
+};
+
 /** Tasks API — to-dos created by Create Task on AI Suggested To-Do */
 export const tasksApi = {
   create: (data: {
