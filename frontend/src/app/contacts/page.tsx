@@ -23,6 +23,9 @@ import { EditableField } from "@/components/editable-field";
 import EditActivity from "@/components/edit-activity";
 import { contactsApi, activitiesApi, aiApi, tasksApi } from "@/lib/api";
 import ActivityComments from "@/components/social/activity-comments";
+// FROZEN 2026-05-07: TeamNotes referenced only inside a `{false && (...)}`
+// dead-code branch below. Bundler tree-shakes; restoring is a one-character
+// edit (search "FROZEN 2026-05-07" in this file).
 import TeamNotes from "@/components/social/team-notes";
 import SendCreditsModal from "@/components/social/send-credits-modal";
 import CreditsToast from "@/components/social/credits-toast";
@@ -1112,11 +1115,14 @@ function ContactsContent() {
                 )}
               </div>
 
-              {/* --- Team Notes — moved 2026-05-06 to live BELOW Activity Timeline.
-                  The timeline is the visual centre of the page; team intel sits
-                  underneath as supporting context. onSendCredits prop removed —
-                  Send-Credits stays on the Dashboard only. */}
-              <TeamNotes contactId={selectedContact.id} />
+              {/* FROZEN 2026-05-07: TeamNotes hidden — Activity Comments
+                  (real-functionalized in Spec 1) is now the canonical team-
+                  collaboration channel for a contact. TeamNotes lacked an
+                  activity anchor and duplicated the comment surface. Restore
+                  by changing `false` to `true` below. Non-null assertion is
+                  sound — the runtime guard is the outer `{selectedContact && (...)}`
+                  detail-panel wrapper further up. */}
+              {false && <TeamNotes contactId={selectedContact!.id} />}
 
               {/* --- Phase C: contact-specific Suggestions panel --- */}
               <ContactSuggestions

@@ -21,17 +21,12 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { dashboardApi, activitiesApi, aiApi, authApi, tasksApi } from "@/lib/api";
 import { useAIBudget } from "@/components/ai-budget";
-// FROZEN 2026-05-06: TeamFeed swapped for RecentTeamNotes; import kept for
-// one-line restoration of the activity feed.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// FROZEN 2026-05-07 (initially 05-06): all six social components below are
+// imported but only referenced inside `{false && (...)}` dead-code blocks.
+// The bundler tree-shakes the unused branches; restoring is a one-character
+// edit (search "FROZEN 2026-05-07" in this file).
 import TeamFeed from "@/components/social/team-feed";
-// FROZEN 2026-05-06: CreditsChip hidden in TeamZone; import kept for
-// one-line restoration of the credits chips grid.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import CreditsChip from "@/components/social/credits-chip";
-// FROZEN 2026-05-06: TeamLeaderboard hidden in TeamZone; import kept for
-// one-line restoration of the leaderboard card.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import TeamLeaderboard from "@/components/social/team-leaderboard";
 import RecentTeamNotes from "@/components/social/recent-team-notes";
 import SendCreditsModal from "@/components/social/send-credits-modal";
@@ -255,25 +250,23 @@ export default function DashboardPage() {
             <ActivityFeedSection />
           </div>
 
-          {/* Right: 40% (2/5) — TeamZone (game zone) on top, then AI Suggestions.
-              TeamZone bundles the social/gamification elements together, visually
-              compressed so they don't compete with the main work surfaces. */}
+          {/* Right: 40% (2/5) — only AI Suggestions remains active; the entire
+              TeamZone bundle (gamification + team-wide social mockups) is frozen
+              below. */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="space-y-4">
-              {/* FROZEN 2026-05-06: Credits chips hidden — gamification stats
-                  not actively used. Restore by uncommenting the line below. */}
-              {/* <CreditsChip credits={myCredits} compact /> */}
-              {/* REPLACED 2026-05-06: TeamFeed swapped for RecentTeamNotes —
-                  team-wide notes are more actionable than activity feed events.
-                  Restore TeamFeed by uncommenting the line below and removing
-                  the RecentTeamNotes line. */}
-              {/* <TeamFeed onSendCredits={(uid) => setSendCreditsTo(uid)} /> */}
-              <RecentTeamNotes />
-              {/* FROZEN 2026-05-06: TeamLeaderboard hidden — duplicates info in
-                  TeamFeed/credits chip and takes too much vertical space.
-                  Restore by uncommenting the line below. */}
-              {/* <TeamLeaderboard /> */}
-            </div>
+            {/* FROZEN 2026-05-07: Entire TeamZone (CreditsChip + TeamFeed +
+                RecentTeamNotes + TeamLeaderboard) hidden — all four are
+                front-end mockups, none in active use. The canonical team-
+                collaboration channel is now Activity Comments (real DB-backed,
+                see Spec 1). Restore by changing `false` to `true` below. */}
+            {false && (
+              <div className="space-y-4">
+                <CreditsChip credits={myCredits} compact />
+                <TeamFeed onSendCredits={(uid) => setSendCreditsTo(uid)} />
+                <RecentTeamNotes />
+                <TeamLeaderboard />
+              </div>
+            )}
             <AISuggestionsSection />
           </div>
         </div>
@@ -299,14 +292,20 @@ export default function DashboardPage() {
         contactEmail={emailContext.email}
         onSuccess={() => setEmailComposeOpen(false)}
       />
-      {/* Social mockup — single Send Credits modal serves Team Feed clicks */}
-      <SendCreditsModal
-        recipientUserId={sendCreditsTo}
-        balance={myCredits}
-        onSend={handleSendCredits}
-        onClose={() => setSendCreditsTo(null)}
-      />
-      <CreditsToast message={toastMessage} onClose={() => setToastMessage(null)} />
+      {/* FROZEN 2026-05-07: SendCreditsModal + CreditsToast hidden along with
+          the rest of the TeamZone — no UI triggers them and the credits
+          gamification layer is dormant. Restore by changing `false` to `true`. */}
+      {false && (
+        <>
+          <SendCreditsModal
+            recipientUserId={sendCreditsTo}
+            balance={myCredits}
+            onSend={handleSendCredits}
+            onClose={() => setSendCreditsTo(null)}
+          />
+          <CreditsToast message={toastMessage} onClose={() => setToastMessage(null)} />
+        </>
+      )}
     </AppShell>
   );
 }
