@@ -25,6 +25,9 @@ import { useAIBudget } from "@/components/ai-budget";
 // one-line restoration of the activity feed.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import TeamFeed from "@/components/social/team-feed";
+// FROZEN 2026-05-06: CreditsChip hidden in TeamZone; import kept for
+// one-line restoration of the credits chips grid.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import CreditsChip from "@/components/social/credits-chip";
 // FROZEN 2026-05-06: TeamLeaderboard hidden in TeamZone; import kept for
 // one-line restoration of the leaderboard card.
@@ -257,7 +260,9 @@ export default function DashboardPage() {
               compressed so they don't compete with the main work surfaces. */}
           <div className="lg:col-span-2 space-y-6">
             <div className="space-y-4">
-              <CreditsChip credits={myCredits} compact />
+              {/* FROZEN 2026-05-06: Credits chips hidden — gamification stats
+                  not actively used. Restore by uncommenting the line below. */}
+              {/* <CreditsChip credits={myCredits} compact /> */}
               {/* REPLACED 2026-05-06: TeamFeed swapped for RecentTeamNotes —
                   team-wide notes are more actionable than activity feed events.
                   Restore TeamFeed by uncommenting the line below and removing
@@ -1018,6 +1023,21 @@ const CATEGORY_LABEL: Record<string, string> = {
   discipline: "Discipline",
 };
 
+// 2026-05-06 refactor: each category gets a colour pair + a priority for
+// vertical ordering. Pacing first because it's the most time-sensitive;
+// Discipline last because it's mostly hygiene.
+const CATEGORY_META: Record<string, { label: string; color: string; bg: string; priority: number }> = {
+  pacing:       { label: "Pacing",       color: "#dc2626", bg: "#fef2f2", priority: 1 },
+  stage:        { label: "Stage",        color: "#2563eb", bg: "#eff6ff", priority: 2 },
+  relationship: { label: "Relationship", color: "#9333ea", bg: "#faf5ff", priority: 3 },
+  data_health:  { label: "Data Health",  color: "#ca8a04", bg: "#fefce8", priority: 4 },
+  discipline:   { label: "Discipline",   color: "#475569", bg: "#f8fafc", priority: 5 },
+};
+
+function getCategoryMeta(category: string) {
+  return CATEGORY_META[category] ?? { label: category, color: "#475569", bg: "#f8fafc", priority: 99 };
+}
+
 /** Same hash function as backend's engine. Used to prefilter snoozed cards. */
 async function hashSuggestion(rule_id: string, contact_id: number | null | undefined): Promise<string> {
   const payload = `${rule_id}|${contact_id ?? ""}`;
@@ -1036,6 +1056,30 @@ function AISuggestionsSection() {
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 2026-05-06: two-layer collapse. Outer = which categories are open;
+  // inner = which individual cards are expanded. Pacing always opens first
+  // because it's the most time-sensitive bucket.
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
+    pacing: true,
+    stage: false,
+    relationship: false,
+    data_health: false,
+    discipline: false,
+  });
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+
+  function toggleCategory(cat: string) {
+    setExpandedCategories((prev) => ({ ...prev, [cat]: !prev[cat] }));
+  }
+  function toggleCard(id: string) {
+    setExpandedCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
@@ -1129,36 +1173,88 @@ function AISuggestionsSection() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {visible.map((s) => (
-            <SuggestionCard
-              key={`${s.rule_id}-${s.contact_id ?? "global"}`}
-              suggestion={s}
-              onHide={() => onHide(s)}
-            />
-          ))}
-        </div>
+        (() => {
+          // Group visible suggestions by category, then sort categories by
+          // priority (pacing first, discipline last).
+          const grouped = visible.reduce<Record<string, AISuggestion[]>>((acc, s) => {
+            const cat = s.category ?? "discipline";
+            if (!acc[cat]) acc[cat] = [];
+            acc[cat].push(s);
+            return acc;
+          }, {});
+          const sortedCategories = Object.keys(grouped).sort(
+            (a, b) => getCategoryMeta(a).priority - getCategoryMeta(b).priority
+          );
+          return (
+            <div className="space-y-2">
+              {sortedCategories.map((cat) => {
+                const meta = getCategoryMeta(cat);
+                const items = grouped[cat];
+                const isExpanded = expandedCategories[cat] ?? false;
+                return (
+                  <div key={cat} className="border border-slate-200 rounded-xl overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleCategory(cat)}
+                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs">{isExpanded ? "▼" : "▶"}</span>
+                        <span
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ color: meta.color, background: meta.bg }}
+                        >
+                          {meta.label}
+                        </span>
+                        <span className="text-xs text-slate-500">{items.length}</span>
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <ul className="divide-y divide-slate-100 border-t border-slate-100">
+                        {items.map((s) => {
+                          const cardId = `${s.rule_id}-${s.contact_id ?? "global"}`;
+                          return (
+                            <SuggestionRow
+                              key={cardId}
+                              suggestion={s}
+                              expanded={expandedCards.has(cardId)}
+                              onToggle={() => toggleCard(cardId)}
+                              onHide={() => onHide(s)}
+                            />
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()
       )}
     </section>
   );
 }
 
-function SuggestionCard({
-  suggestion: s, onHide,
+// 2026-05-06 refactor: SuggestionCard replaced by SuggestionRow. Cards used
+// to be fully expanded (one-line title + meta + buttons all visible at once),
+// which made the right column a wall of 19+ stacked panels. Now each row is
+// a single line by default; click ▶ to reveal the full rationale + buttons.
+function SuggestionRow({
+  suggestion: s,
+  expanded,
+  onToggle,
+  onHide,
 }: {
   suggestion: AISuggestion;
+  expanded: boolean;
+  onToggle: () => void;
   onHide: () => void;
 }) {
   const [created, setCreated] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [whyOpen, setWhyOpen] = useState(false);
-  const [snoozeMenuOpen, setSnoozeMenuOpen] = useState(false);
 
-  const stripe = URGENCY_STRIPE[s.urgency] || URGENCY_STRIPE.low;
-  const categoryLabel = CATEGORY_LABEL[s.category] || s.category;
-
-  // Map engine's suggested_action → task_type for Create Task.
   const taskType = (s.suggested_action === "linkedin" || s.suggested_action === "review")
     ? "follow_up"
     : s.suggested_action;
@@ -1188,103 +1284,110 @@ function SuggestionCard({
         contact_id: s.contact_id ?? null,
         days,
       });
-      onHide();  // optimistic remove from current view
+      onHide();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Snooze failed");
     }
   };
 
+  // Urgency dot — small coloured circle on the left of the title row,
+  // replaces the old left-edge stripe (which doesn't fit a list layout).
+  const urgencyDot =
+    s.urgency === "high" ? "#dc2626"
+    : s.urgency === "medium" ? "#f59e0b"
+    : "#94a3b8";
+
   return (
-    <Card className={`border border-slate-200 transition-opacity overflow-hidden ${created ? "opacity-60" : ""}`}>
-      <div className="flex">
-        {/* Urgency color stripe (left edge) */}
-        <div className={`${stripe} w-1 shrink-0`} />
-        <CardContent className="py-3 px-4 flex-1">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <p className="text-sm font-medium text-slate-900">
-              {s.rationale}
-            </p>
-            <span className="text-[10px] uppercase tracking-wide bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">
-              {categoryLabel}
-            </span>
+    <li className={`px-3 py-2 transition-opacity ${created ? "opacity-60" : ""}`}>
+      {/* Collapsed row — single line, click to expand */}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-start gap-2 text-left hover:bg-slate-50 rounded -mx-1 px-1 py-0.5"
+      >
+        <span className="text-xs text-slate-400 mt-0.5 shrink-0">
+          {expanded ? "▼" : "▶"}
+        </span>
+        <span
+          className="rounded-full shrink-0 mt-1.5"
+          style={{ width: 6, height: 6, background: urgencyDot }}
+          aria-hidden
+        />
+        <span className="text-xs text-slate-800 leading-snug flex-1 line-clamp-1">
+          {s.rationale}
+        </span>
+      </button>
+
+      {/* Expanded section — full Why + actions (flex-wrap so all buttons fit). */}
+      {expanded && (
+        <div className="mt-2 ml-4 pl-2 border-l-2 border-slate-200 space-y-2">
+          {/* Why? — full rationale (untruncated) + raw rule meta. The
+              rationale itself is the contact-specific narrative produced by
+              the rule engine; meta is for transparency. */}
+          <div className="text-xs text-slate-600">
+            <span className="font-semibold text-slate-700">Why? </span>
+            {s.rationale ? (
+              <span className="whitespace-pre-wrap">{s.rationale}</span>
+            ) : (
+              <span className="italic text-slate-400">
+                No additional context available for this suggestion.
+              </span>
+            )}
+            <div className="text-[10px] text-slate-400 mt-1">
+              Rule <code>{s.rule_id}</code> · Action {s.suggested_action}
+              {s.contact_id ? ` · Contact #${s.contact_id}` : ""}
+            </div>
           </div>
 
-          <button
-            onClick={() => setWhyOpen(v => !v)}
-            className="text-[11px] text-slate-400 hover:text-slate-600 mb-2"
-          >
-            {whyOpen ? "▼" : "▶"} Why?
-          </button>
-          {whyOpen && (
-            <div className="text-[11px] text-slate-500 mb-2 bg-slate-50 rounded px-2 py-1.5">
-              <div>Rule: <code>{s.rule_id}</code></div>
-              <div>Action: {s.suggested_action}</div>
-              {s.contact_id && <div>Contact id: {s.contact_id}</div>}
-            </div>
-          )}
+          {error && <p className="text-xs text-red-500">{error}</p>}
 
-          {error && <p className="text-xs text-red-500 mb-1">{error}</p>}
-
-          {/* Phase B: 2-button action row, matches FollowUpCard pattern.
-              Log Action → navigates to the contact (then user clicks
-              + Log Action in nav). Snooze pops a 3-option menu. */}
-          <div
-            className="flex items-center gap-2 pt-2 mt-1 flex-wrap"
-            style={{ borderTop: "1px solid var(--border-faint)" }}
-          >
+          {/* Action buttons — flex-wrap so the row never clips on narrow
+              widths (this was the same root cause as the FollowUpCard
+              snooze-dropdown clip from 2026-05-06). */}
+          <div className="flex items-center gap-2 flex-wrap">
             {created ? (
-              <span className="text-[12px] px-2 py-1" style={{ color: "var(--text-secondary)" }}>
-                Task created
-              </span>
+              <span className="text-[11px] px-2 py-1 text-slate-500">Task created</span>
             ) : s.contact_id ? (
               <Link
                 href={`/contacts?id=${s.contact_id}`}
-                className="text-[12px] px-3 py-1 rounded-full border text-white"
-                style={{
-                  background: "var(--brand-blue)",
-                  borderColor: "var(--brand-blue)",
-                }}
+                className="text-[11px] px-3 py-1 rounded-full font-medium bg-slate-900 text-white hover:bg-slate-800"
               >
                 Log Action
               </Link>
             ) : (
-              <Button
-                size="sm"
+              <button
+                type="button"
                 onClick={createTask}
                 disabled={creating}
-                className="text-[12px] h-7 px-3 text-white"
-                style={{ background: "var(--brand-blue)" }}
+                className="text-[11px] px-3 py-1 rounded-full font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
               >
                 {creating ? "Creating..." : "Log Action"}
-              </Button>
-            )}
-            <div className="relative">
-              <button
-                onClick={() => setSnoozeMenuOpen((v) => !v)}
-                className="text-[12px] px-3 py-1 rounded-full border"
-                style={{
-                  background: "var(--bg-card)",
-                  color: "var(--text-secondary)",
-                  borderColor: "var(--border-strong)",
-                }}
-              >
-                Snooze
               </button>
-              {snoozeMenuOpen && (
-                <div
-                  className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg z-10 text-[12px] min-w-[120px] overflow-hidden"
-                  style={{ border: "1px solid var(--border-strong)" }}
-                >
-                  <button onClick={() => snoozeFor(1)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 day</button>
-                  <button onClick={() => snoozeFor(3)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 3 days</button>
-                  <button onClick={() => snoozeFor(7)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50">+ 1 week</button>
-                  <button onClick={() => snoozeFor(365)} className="block w-full text-left px-3 py-1.5 hover:bg-slate-50" style={{ color: "var(--text-muted)" }}>Forever</button>
-                </div>
-              )}
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={() => snoozeFor(1)}
+              className="text-[11px] px-3 py-1 rounded-full font-medium border border-slate-300 hover:bg-slate-50 text-slate-700"
+            >
+              + 1 day
+            </button>
+            <button
+              type="button"
+              onClick={() => snoozeFor(7)}
+              className="text-[11px] px-3 py-1 rounded-full font-medium border border-slate-300 hover:bg-slate-50 text-slate-700"
+            >
+              + 1 week
+            </button>
+            <button
+              type="button"
+              onClick={() => snoozeFor(365)}
+              className="text-[11px] px-3 py-1 rounded-full font-medium text-slate-500 hover:bg-slate-50"
+            >
+              Forever
+            </button>
           </div>
-        </CardContent>
-      </div>
-    </Card>
+        </div>
+      )}
+    </li>
   );
 }
