@@ -21,9 +21,16 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { dashboardApi, activitiesApi, aiApi, authApi, tasksApi } from "@/lib/api";
 import { useAIBudget } from "@/components/ai-budget";
+// FROZEN 2026-05-06: TeamFeed swapped for RecentTeamNotes; import kept for
+// one-line restoration of the activity feed.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import TeamFeed from "@/components/social/team-feed";
 import CreditsChip from "@/components/social/credits-chip";
+// FROZEN 2026-05-06: TeamLeaderboard hidden in TeamZone; import kept for
+// one-line restoration of the leaderboard card.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import TeamLeaderboard from "@/components/social/team-leaderboard";
+import RecentTeamNotes from "@/components/social/recent-team-notes";
 import SendCreditsModal from "@/components/social/send-credits-modal";
 import CreditsToast from "@/components/social/credits-toast";
 import { findTeamMember, CURRENT_USER_ID } from "@/lib/team-mock";
@@ -251,8 +258,16 @@ export default function DashboardPage() {
           <div className="lg:col-span-2 space-y-6">
             <div className="space-y-4">
               <CreditsChip credits={myCredits} compact />
-              <TeamFeed onSendCredits={(uid) => setSendCreditsTo(uid)} />
-              <TeamLeaderboard />
+              {/* REPLACED 2026-05-06: TeamFeed swapped for RecentTeamNotes —
+                  team-wide notes are more actionable than activity feed events.
+                  Restore TeamFeed by uncommenting the line below and removing
+                  the RecentTeamNotes line. */}
+              {/* <TeamFeed onSendCredits={(uid) => setSendCreditsTo(uid)} /> */}
+              <RecentTeamNotes />
+              {/* FROZEN 2026-05-06: TeamLeaderboard hidden — duplicates info in
+                  TeamFeed/credits chip and takes too much vertical space.
+                  Restore by uncommenting the line below. */}
+              {/* <TeamLeaderboard /> */}
             </div>
             <AISuggestionsSection />
           </div>
@@ -682,11 +697,19 @@ function FollowUpCard({
 
   return (
     <div
-      className="bg-white rounded-xl overflow-hidden hover:shadow-sm transition-shadow"
+      // Fix 2026-05-06: was `overflow-hidden`, which clipped the Snooze
+      // dropdown menu (absolute-positioned below the Snooze button) at the
+      // card's bottom edge — looked like a third pill being cut off.
+      // overflow-visible lets the dropdown render outside the card border.
+      className="bg-white rounded-xl overflow-visible hover:shadow-sm transition-shadow"
       style={{ border: "1px solid var(--border-faint)" }}
     >
       <div className="flex">
-        {/* 3px coloured left stripe */}
+        {/* 3px coloured left stripe.
+            Note: the inner row uses rounded-tl-xl/bl-xl-equivalent via the
+            outer rounded-xl + flex; since overflow-visible was needed for
+            the Snooze dropdown, the stripe now extends 1px beyond the card
+            corners on hover-shadow. Negligible. */}
         <div style={{ width: 3, background: stripeColor, flexShrink: 0 }} />
         <div className="px-4 py-3 flex-1">
           <div className="flex items-start justify-between gap-3">

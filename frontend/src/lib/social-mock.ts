@@ -232,3 +232,88 @@ export const MOCK_CREDIT_LEDGER: CreditEntry[] = [
 
 /** Today-wide team activity counter shown in the weekly stats chip. */
 export const MOCK_TEAM_REACTIONS_TODAY = 76;
+
+// ============================================================================
+// Recent Team Notes (Dashboard view)
+// Flattened list of notes across all contacts, sorted by recency.
+// Uses mock contact names because the social-mock layer doesn't have access
+// to the real Contacts API. When notes graduate to a real backend feature,
+// replace this with a /api/team-notes/recent endpoint.
+// ============================================================================
+
+export interface RecentTeamNote {
+  id: string;                  // unique key for React, e.g. "n-1"
+  contactId: number;           // contact this note belongs to
+  contactName: string;         // human-readable contact name for display
+  userId: number;              // who wrote it (TEAM_MEMBERS id)
+  text: string;
+  timeAgo: string;             // pre-formatted relative time
+  reactions: { "🔥": number; "👊": number };  // simplified reaction set
+}
+
+// Mock contact names mapped to placeholder contactIds. When this graduates to
+// a real backend feature, contact names will come from the Contacts table.
+const MOCK_CONTACT_NAMES: Record<number, string> = {
+  1: "Mitch Doyle (Patagonia)",
+  2: "Burton Snowboards",
+  3: "K2 Sports",
+  4: "Salomon Group",
+  5: "Atomic Skis",
+};
+
+export const RECENT_TEAM_NOTES: RecentTeamNote[] = [
+  {
+    id: "n-1",
+    contactId: 2,
+    contactName: MOCK_CONTACT_NAMES[2],
+    userId: 2, // David Marketing
+    text: "This guy's huge into mountain biking. Talked about Squamish trails for 20 min last call. Use that as opener.",
+    timeAgo: "3d ago",
+    reactions: { "🔥": 2, "👊": 1 },
+  },
+  {
+    id: "n-2",
+    contactId: 3,
+    contactName: MOCK_CONTACT_NAMES[3],
+    userId: 4, // Steve
+    text: "Their CFO is the actual decision maker, not Mitch. Loop her in by week 6 or this drags.",
+    timeAgo: "5d ago",
+    reactions: { "🔥": 3, "👊": 1 },
+  },
+  {
+    id: "n-3",
+    contactId: 1,
+    contactName: MOCK_CONTACT_NAMES[1],
+    userId: 3, // Doug
+    text: "Allergic to pricing decks in first call. Lead with samples — they want to feel the product.",
+    timeAgo: "1w ago",
+    reactions: { "🔥": 1, "👊": 2 },
+  },
+  {
+    id: "n-4",
+    contactId: 4,
+    contactName: MOCK_CONTACT_NAMES[4],
+    userId: 1, // David Admin
+    text: "His daughter just got into UBC — small talk gold for next call. Mentioned during ISPO booth chat.",
+    timeAgo: "1w ago",
+    reactions: { "🔥": 4, "👊": 0 },
+  },
+  {
+    id: "n-5",
+    contactId: 5,
+    contactName: MOCK_CONTACT_NAMES[5],
+    userId: 2, // David Marketing
+    text: "Prefers email over calls. Don't push for phone — he'll go cold for 2 weeks if you do.",
+    timeAgo: "2w ago",
+    reactions: { "🔥": 1, "👊": 1 },
+  },
+  {
+    id: "n-6",
+    contactId: 3,
+    contactName: MOCK_CONTACT_NAMES[3],
+    userId: 5, // GT Film Sales
+    text: "They mentioned budget concerns last quarter — worth checking the new fiscal year cycle starts April.",
+    timeAgo: "2w ago",
+    reactions: { "🔥": 0, "👊": 1 },
+  },
+];
