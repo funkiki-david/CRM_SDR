@@ -983,7 +983,7 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
       <span className="text-xs text-slate-400 shrink-0 w-16 mt-0.5">{formatTime(activity.created_at)}</span>
       <span className="shrink-0 mt-0.5 text-slate-400">{icon}</span>
       <div className="flex-1 min-w-0">
-        <p className="text-xs text-slate-600">
+        <p className="text-sm text-slate-600">
           <span className="font-medium text-slate-800">{activity.user_name}</span>
           <span className="text-slate-400"> · </span>
           <span>{verb}{" "}
@@ -993,7 +993,7 @@ function ActivityRow({ activity }: { activity: ActivityItem }) {
           </span>
         </p>
         {activity.subject && (
-          <p className="text-xs text-slate-500 truncate mt-0.5">{activity.subject}</p>
+          <p className="text-sm text-slate-500 truncate mt-0.5">{activity.subject}</p>
         )}
       </div>
     </div>
@@ -1312,7 +1312,7 @@ function SuggestionRow({
           style={{ width: 6, height: 6, background: urgencyDot }}
           aria-hidden
         />
-        <span className="text-xs text-slate-800 leading-snug flex-1 line-clamp-1">
+        <span className="text-sm text-slate-800 leading-snug flex-1 line-clamp-1">
           {s.rationale}
         </span>
       </button>
@@ -1323,7 +1323,7 @@ function SuggestionRow({
           {/* Why? — full rationale (untruncated) + raw rule meta. The
               rationale itself is the contact-specific narrative produced by
               the rule engine; meta is for transparency. */}
-          <div className="text-xs text-slate-600">
+          <div className="text-sm text-slate-600">
             <span className="font-semibold text-slate-700">Why? </span>
             {s.rationale ? (
               <span className="whitespace-pre-wrap">{s.rationale}</span>

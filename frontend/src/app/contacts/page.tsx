@@ -356,15 +356,45 @@ function ContactsContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, showArchived]);
 
-  // If a contact ID is in the URL, select it (might land on a different page)
+  // 2026-05-06 fix: when /contacts?id=N points to a contact that ISN'T in
+  // the currently loaded page (PAGE_SIZE=30 vs ~180 contacts in DB), fall
+  // back to a single-contact fetch so cross-page jumps from the Dashboard
+  // work reliably regardless of where the contact lives in the list.
+  // Previously this effect silently failed for ~84% of contacts.
   useEffect(() => {
-    if (preselectedId && contacts.length > 0) {
-      const found = contacts.find((c) => c.id === Number(preselectedId));
-      if (found) {
-        setSelectedContact(found);
-        loadActivities(found.id);
-      }
+    if (!preselectedId) return;
+    if (contacts.length === 0) return;  // wait for first list load
+
+    const idNum = Number(preselectedId);
+    if (Number.isNaN(idNum)) return;
+
+    // Fast path — contact is in the current page.
+    const foundInPage = contacts.find((c) => c.id === idNum);
+    if (foundInPage) {
+      setSelectedContact(foundInPage);
+      loadActivities(foundInPage.id);
+      return;
     }
+
+    // Slow path — fetch single contact, prepend to local state, select.
+    let cancelled = false;
+    (async () => {
+      try {
+        const fetched = await contactsApi.get(idNum) as Contact;
+        if (cancelled) return;
+        setContacts((prev) => (
+          prev.some((c) => c.id === fetched.id) ? prev : [fetched, ...prev]
+        ));
+        setSelectedContact(fetched);
+        loadActivities(fetched.id);
+      } catch (err) {
+        // Deleted contact / no permission / bad ID — leave the panel
+        // empty rather than nagging the user. Same UX as before for
+        // invalid IDs; the warning helps debugging only.
+        console.warn("Auto-select fallback failed:", err);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [preselectedId, contacts, loadActivities]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
