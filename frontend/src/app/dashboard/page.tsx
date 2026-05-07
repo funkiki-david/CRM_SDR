@@ -735,7 +735,7 @@ function FollowUpCard({
               </p>
               {noteLine && (
                 <p
-                  className="text-[12px] mt-1 italic line-clamp-2"
+                  className="text-[14px] mt-1 italic line-clamp-2"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   &ldquo;{noteLine}&rdquo;
