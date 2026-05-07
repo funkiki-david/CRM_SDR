@@ -20,6 +20,7 @@ from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.templates import router as templates_router
 from app.api.routes.emails import router as emails_router
 from app.api.routes.apollo import router as apollo_router
+from app.api.routes.finder import router as finder_router
 from app.api.routes.system_settings import router as settings_router
 from app.api.routes.ai import router as ai_router
 from app.api.routes.users import router as users_router
@@ -70,6 +71,7 @@ app.include_router(dashboard_router)
 app.include_router(templates_router)  # returns 501 EMAIL_FROZEN (see templates.py)
 app.include_router(emails_router)
 app.include_router(apollo_router)
+app.include_router(finder_router)
 app.include_router(settings_router)
 app.include_router(ai_router)
 app.include_router(users_router)
