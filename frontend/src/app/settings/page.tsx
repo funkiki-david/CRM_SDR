@@ -9,6 +9,7 @@ import AppShell from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { settingsApi, authApi, aiApi } from "@/lib/api";
 import TeamMembers from "@/components/team-members";
 import AIUsageAdmin from "@/components/ai-usage-admin";

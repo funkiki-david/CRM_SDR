@@ -1,37 +1,17 @@
 /**
- * ActivityComments — social toolbar that hangs off each activity in the
- * Contact timeline.
+ * ActivityComments — real DB-backed comment thread per activity row.
  *
- * Mixed mockup + real:
- *  - Stars (⭐⭐⭐⭐⭐) and 5-emoji reactions stay mockup state (resets on refresh)
- *  - Comments are backed by real DB rows via activityCommentsApi
- *
- * Permissions on comments:
+ * Permissions:
  *  - Author can Edit + Delete own comment
  *  - Admin can Delete anyone's comment
- *  - Stars / emoji reactions still let everyone toggle their own (in-memory)
- *
- * Mock activities (id < 0) bypass the real API — comment input is hidden so
- * users don't try to comment on rows that don't exist server-side.
  */
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  MOCK_ACTIVITY_SOCIAL,
-  REACTION_EMOJIS,
-  type ActivitySocial,
-  type ReactionEmoji,
-} from "@/lib/social-mock";
-import { CURRENT_USER_ID, findTeamMember } from "@/lib/team-mock";
 import { activityCommentsApi, authApi, type ServerActivityComment } from "@/lib/api";
-import EmojiBar from "./emoji-bar";
-import StarRating from "./star-rating";
 
 interface ActivityCommentsProps {
   activityId: number;
-  /** Optional — when provided, opens the Send-Credits modal. */
-  onSendCredits?: (recipientUserId: number) => void;
 }
 
 interface CurrentUser {
@@ -40,15 +20,18 @@ interface CurrentUser {
   full_name?: string;
 }
 
-function emptyState(): ActivitySocial {
-  return {
-    stars: [],
-    reactions: REACTION_EMOJIS.reduce((acc, e) => {
-      acc[e] = [];
-      return acc;
-    }, {} as Record<ReactionEmoji, number[]>),
-    comments: [],
-  };
+// Deterministic avatar colour from a numeric id — same id always gets same hue.
+const AVATAR_PALETTE = [
+  "#0ea5e9", "#6366f1", "#8b5cf6", "#ec4899", "#f97316",
+  "#10b981", "#14b8a6", "#f59e0b", "#ef4444", "#3b82f6",
+];
+function avatarColor(userId: number | null): string {
+  if (userId === null || userId === undefined) return "#94a3b8";
+  return AVATAR_PALETTE[Math.abs(userId) % AVATAR_PALETTE.length];
+}
+function initialsFrom(name: string | null | undefined): string {
+  if (!name) return "??";
+  return name.split(" ").filter(Boolean).map((s) => s[0]).join("").slice(0, 2).toUpperCase();
 }
 
 function relativeTimeFromIso(iso: string): string {
@@ -64,31 +47,17 @@ function relativeTimeFromIso(iso: string): string {
   return date.toLocaleDateString();
 }
 
-export default function ActivityComments({ activityId, onSendCredits }: ActivityCommentsProps) {
-  // Mock-only rows have negative ids — they exist only in MOCK_TIMELINE_ACTIVITIES
-  // and have no DB row to attach real comments to.
-  const isMockActivity = activityId < 0;
-
-  // ============== Stars + Emoji reactions: still pure frontend mockup ==============
-  const seed = MOCK_ACTIVITY_SOCIAL[activityId] ?? emptyState();
-  const [stars, setStars] = useState<number[]>(seed.stars);
-  const [reactions, setReactions] = useState<Record<ReactionEmoji, number[]>>(seed.reactions);
-
-  // ============== Comments: real-backed (when activityId is a real row) ==============
-  // For mock rows we still seed from MOCK_ACTIVITY_SOCIAL so the demo timeline
-  // looks lived-in, but no API calls fire.
+export default function ActivityComments({ activityId }: ActivityCommentsProps) {
   const [comments, setComments] = useState<ServerActivityComment[]>([]);
-  const [commentsLoading, setCommentsLoading] = useState(!isMockActivity);
+  const [commentsLoading, setCommentsLoading] = useState(true);
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
 
-  // ============== UI state ==============
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
 
-  // ============== Current user (for edit/delete permission gating) ==============
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
   useEffect(() => {
@@ -106,14 +75,7 @@ export default function ActivityComments({ activityId, onSendCredits }: Activity
     };
   }, []);
 
-  // Load comments from the API once on mount (skip for mock rows)
   useEffect(() => {
-    if (isMockActivity) {
-      // Mock rows don't have a DB row — skip API; we won't render the input
-      // either, so the empty list is fine.
-      setCommentsLoading(false);
-      return;
-    }
     let cancelled = false;
     setCommentsLoading(true);
     setCommentsError(null);
@@ -133,31 +95,11 @@ export default function ActivityComments({ activityId, onSendCredits }: Activity
     return () => {
       cancelled = true;
     };
-  }, [activityId, isMockActivity]);
+  }, [activityId]);
 
-  // ============== Stars / reaction toggles (mockup) ==============
-  function toggleStar() {
-    setStars((prev) =>
-      prev.includes(CURRENT_USER_ID)
-        ? prev.filter((id) => id !== CURRENT_USER_ID)
-        : [...prev, CURRENT_USER_ID]
-    );
-  }
-
-  function toggleEmoji(emoji: ReactionEmoji) {
-    setReactions((prev) => {
-      const list = prev[emoji] ?? [];
-      const next = list.includes(CURRENT_USER_ID)
-        ? list.filter((id) => id !== CURRENT_USER_ID)
-        : [...list, CURRENT_USER_ID];
-      return { ...prev, [emoji]: next };
-    });
-  }
-
-  // ============== Comment handlers (real API) ==============
   async function postComment() {
     const text = draft.trim();
-    if (!text || posting || isMockActivity) return;
+    if (!text || posting) return;
     setPosting(true);
     setCommentsError(null);
     try {
@@ -207,33 +149,17 @@ export default function ActivityComments({ activityId, onSendCredits }: Activity
     }
   }
 
-  // ============== Derived counts for top toolbar ==============
-  const counts = REACTION_EMOJIS.reduce((acc, e) => {
-    acc[e] = (reactions[e] ?? []).length;
-    return acc;
-  }, {} as Record<ReactionEmoji, number>);
-
-  const myReactions = new Set<ReactionEmoji>(
-    REACTION_EMOJIS.filter((e) => (reactions[e] ?? []).includes(CURRENT_USER_ID))
-  );
-
   return (
     <div className="border-t border-slate-200 mt-3 pt-2">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
-          <StarRating starredBy={stars} onToggle={toggleStar} />
-          <EmojiBar counts={counts} active={myReactions} onToggle={toggleEmoji} size="sm" />
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1 px-2 py-0.5 rounded-full hover:bg-slate-100"
-          >
-            <span aria-hidden>💬</span>
-            {comments.length} {comments.length === 1 ? "comment" : "comments"}
-            <span className="text-slate-400">{expanded ? "⌃" : "⌄"}</span>
-          </button>
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1 px-2 py-0.5 rounded-full hover:bg-slate-100"
+      >
+        <span aria-hidden>💬</span>
+        {comments.length} {comments.length === 1 ? "comment" : "comments"}
+        <span className="text-slate-400">{expanded ? "⌃" : "⌄"}</span>
+      </button>
 
       {expanded && (
         <div className="mt-3 space-y-3">
@@ -259,39 +185,34 @@ export default function ActivityComments({ activityId, onSendCredits }: Activity
                   onSaveEdit={saveEdit}
                   onCancelEdit={cancelEdit}
                   onDelete={() => deleteComment(c.id)}
-                  onSendCredits={onSendCredits}
                 />
               ))}
             </ul>
           )}
 
-          {/* Compose box — hidden for mock activity rows since there's no
-              DB row to attach a comment to. */}
-          {!isMockActivity && (
-            <div className="flex items-end gap-2">
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    postComment();
-                  }
-                }}
-                placeholder="Add a comment..."
-                rows={2}
-                className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
-              />
-              <button
-                type="button"
-                onClick={postComment}
-                disabled={!draft.trim() || posting}
-                className="rounded-full px-4 py-2 text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed"
-              >
-                {posting ? "Posting…" : "Post"}
-              </button>
-            </div>
-          )}
+          <div className="flex items-end gap-2">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  postComment();
+                }
+              }}
+              placeholder="Add a comment..."
+              rows={2}
+              className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+            />
+            <button
+              type="button"
+              onClick={postComment}
+              disabled={!draft.trim() || posting}
+              className="rounded-full px-4 py-2 text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed"
+            >
+              {posting ? "Posting…" : "Post"}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -308,7 +229,6 @@ function CommentRow({
   onSaveEdit,
   onCancelEdit,
   onDelete,
-  onSendCredits,
 }: {
   comment: ServerActivityComment;
   currentUser: CurrentUser | null;
@@ -319,13 +239,9 @@ function CommentRow({
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDelete: () => void;
-  onSendCredits?: (recipientUserId: number) => void;
 }) {
-  // Try to colour the avatar from the team-mock roster so existing seed data
-  // stays consistent. Falls back to a slate avatar for unknown users.
-  const author = comment.user_id !== null ? findTeamMember(comment.user_id) : null;
-  const initials = author?.initials ?? (comment.user_name ? comment.user_name.split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase() : "??");
-  const color = author?.color ?? "#94a3b8";
+  const initials = initialsFrom(comment.user_name);
+  const color = avatarColor(comment.user_id);
 
   const isMine = currentUser !== null && comment.user_id === currentUser.id;
   const isAdmin = currentUser?.role === "admin";
@@ -392,19 +308,6 @@ function CommentRow({
           </div>
         ) : (
           <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-wrap">{comment.text}</p>
-        )}
-
-        {/* Send credits button — only when handler provided + not your own comment */}
-        {onSendCredits && comment.user_id !== null && comment.user_id !== currentUser?.id && !isEditing && (
-          <div className="mt-1.5">
-            <button
-              type="button"
-              onClick={() => onSendCredits(comment.user_id as number)}
-              className="rounded-full px-2 py-0.5 text-[11px] font-medium border border-slate-200 hover:bg-slate-100 text-slate-700 inline-flex items-center gap-1"
-            >
-              <span aria-hidden>💎</span> Send credits
-            </button>
-          </div>
         )}
       </div>
     </li>
