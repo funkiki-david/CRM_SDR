@@ -1,7 +1,6 @@
 """
 活动记录表 — 记录 SDR 与联系人的每次互动
 类型包括：电话、邮件、LinkedIn 消息、会议、备注
-每条活动都会生成向量 embedding 存入 pgvector，用于后续语义搜索
 """
 
 from __future__ import annotations

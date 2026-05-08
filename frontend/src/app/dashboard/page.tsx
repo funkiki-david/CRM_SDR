@@ -14,24 +14,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import AppShell from "@/components/app-shell";
 import QuickEntry from "@/components/quick-entry";
-import EmailCompose from "@/components/email-compose";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { dashboardApi, activitiesApi, aiApi, authApi, tasksApi } from "@/lib/api";
 import { useAIBudget } from "@/components/ai-budget";
-// FROZEN 2026-05-07 (initially 05-06): all six social components below are
-// imported but only referenced inside `{false && (...)}` dead-code blocks.
-// The bundler tree-shakes the unused branches; restoring is a one-character
-// edit (search "FROZEN 2026-05-07" in this file).
-import TeamFeed from "@/components/social/team-feed";
-import CreditsChip from "@/components/social/credits-chip";
-import TeamLeaderboard from "@/components/social/team-leaderboard";
-import RecentTeamNotes from "@/components/social/recent-team-notes";
-import SendCreditsModal from "@/components/social/send-credits-modal";
-import CreditsToast from "@/components/social/credits-toast";
-import { findTeamMember, CURRENT_USER_ID } from "@/lib/team-mock";
 
 // ==================== Types ====================
 
@@ -78,7 +66,6 @@ interface ActivityItem {
 
 interface QuickStats {
   total_contacts: number;
-  emails_today: number;
   calls_today: number;
   meetings_this_week: number;
 }
@@ -150,25 +137,6 @@ export default function DashboardPage() {
 
   // Compose dialogs
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
-  const [emailComposeOpen, setEmailComposeOpen] = useState(false);
-  const [emailContext, setEmailContext] = useState<{ id: number; name: string; email: string | null }>({
-    id: 0, name: "", email: null,
-  });
-
-  // Social mockup — current user's virtual credit balance + Send-Credits state.
-  const [myCredits, setMyCredits] = useState(
-    () => findTeamMember(CURRENT_USER_ID)?.credits ?? 0
-  );
-  const [sendCreditsTo, setSendCreditsTo] = useState<number | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  function handleSendCredits(recipientUserId: number, amount: number, message: string) {
-    const recipient = findTeamMember(recipientUserId);
-    setMyCredits((c) => c - amount);
-    setSendCreditsTo(null);
-    const msgFragment = message ? ` — "${message}"` : "";
-    setToastMessage(`💎 Sent ${amount} credits to ${recipient?.name ?? "teammate"}${msgFragment}`);
-  }
 
   const loadFollowUps = useCallback(async () => {
     setLoadingFollowUps(true);
@@ -188,15 +156,6 @@ export default function DashboardPage() {
     loadFollowUps();
   }, [loadFollowUps]);
 
-  // FROZEN 2026-05-05: openEmail kept for prop compatibility with
-  // FollowUpsSection / FollowUpGroup / FollowUpCard. The Email button itself
-  // is no longer rendered; EmailCompose dialog state preserved for one-step
-  // restoration when the email feature is developed.
-  const openEmail = (fu: FollowUp) => {
-    setEmailContext({ id: fu.contact_id, name: fu.contact_name, email: fu.contact_email });
-    setEmailComposeOpen(true);
-  };
-
   // Phase B: dynamic greeting + subtitle
   const now = new Date();
   const hour = now.getHours();
@@ -212,8 +171,7 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <div className="max-w-7xl mx-auto px-6 py-6 space-y-5">
-        {/* === Greeting header (Phase B). CreditsChip moved to right-column
-            TeamZone so the greeting stays clean — see right column below. */}
+        {/* === Greeting header (Phase B) === */}
         <div>
           <h1
             className="font-display font-bold text-slate-900"
@@ -245,28 +203,12 @@ export default function DashboardPage() {
               loading={loadingFollowUps}
               data={followUps}
               onRefresh={loadFollowUps}
-              onEmail={openEmail}
             />
             <ActivityFeedSection />
           </div>
 
-          {/* Right: 40% (2/5) — only AI Suggestions remains active; the entire
-              TeamZone bundle (gamification + team-wide social mockups) is frozen
-              below. */}
+          {/* Right: 40% (2/5) — AI Suggestions only */}
           <div className="lg:col-span-2 space-y-6">
-            {/* FROZEN 2026-05-07: Entire TeamZone (CreditsChip + TeamFeed +
-                RecentTeamNotes + TeamLeaderboard) hidden — all four are
-                front-end mockups, none in active use. The canonical team-
-                collaboration channel is now Activity Comments (real DB-backed,
-                see Spec 1). Restore by changing `false` to `true` below. */}
-            {false && (
-              <div className="space-y-4">
-                <CreditsChip credits={myCredits} compact />
-                <TeamFeed onSendCredits={(uid) => setSendCreditsTo(uid)} />
-                <RecentTeamNotes />
-                <TeamLeaderboard />
-              </div>
-            )}
             <AISuggestionsSection />
           </div>
         </div>
@@ -281,31 +223,6 @@ export default function DashboardPage() {
         onClose={() => setQuickEntryOpen(false)}
         onSuccess={() => { setQuickEntryOpen(false); loadFollowUps(); }}
       />
-      {/* FROZEN 2026-05-05: EmailCompose dialog mount preserved (never opens
-          while no UI triggers setEmailComposeOpen(true)) so unfreezing is a
-          one-line edit. Safe to keep — all email send buttons are hidden. */}
-      <EmailCompose
-        open={emailComposeOpen}
-        onClose={() => setEmailComposeOpen(false)}
-        contactId={emailContext.id}
-        contactName={emailContext.name}
-        contactEmail={emailContext.email}
-        onSuccess={() => setEmailComposeOpen(false)}
-      />
-      {/* FROZEN 2026-05-07: SendCreditsModal + CreditsToast hidden along with
-          the rest of the TeamZone — no UI triggers them and the credits
-          gamification layer is dormant. Restore by changing `false` to `true`. */}
-      {false && (
-        <>
-          <SendCreditsModal
-            recipientUserId={sendCreditsTo}
-            balance={myCredits}
-            onSend={handleSendCredits}
-            onClose={() => setSendCreditsTo(null)}
-          />
-          <CreditsToast message={toastMessage} onClose={() => setToastMessage(null)} />
-        </>
-      )}
     </AppShell>
   );
 }
@@ -365,14 +282,8 @@ function QuickStatsRow({ stats }: { stats: QuickStats | null }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       <StatChip value={stats?.total_contacts ?? "—"} label="contacts" />
-      {/* FROZEN 2026-05-05: emails_today stat hidden until email feature is developed. */}
-      {/* <StatChip value={stats?.emails_today ?? 0} label="emails today" /> */}
       <StatChip value={stats?.calls_today ?? 0} label="calls today" />
       <StatChip value={stats?.meetings_this_week ?? 0} label="meetings this week" />
-      {/* FROZEN 2026-05-05: AIBudgetChip hidden until cost-tracking UI is rebuilt.
-          Restore by uncommenting the line below. AIBudgetChip function is
-          preserved above for one-step restoration. */}
-      {/* <AIBudgetChip /> */}
     </div>
   );
 }
@@ -429,12 +340,11 @@ const STATUS_GROUPS: StatusGroupStyle[] = [
 ];
 
 function FollowUpsSection({
-  loading, data, onRefresh, onEmail,
+  loading, data, onRefresh,
 }: {
   loading: boolean;
   data: FollowUpsResponse | null;
   onRefresh: () => void;
-  onEmail: (fu: FollowUp) => void;
 }) {
   // Expansion state: per-group key. Default is only "overdue" expanded
   // (with top 3 visible — `INITIAL_TOP=3` below).
@@ -555,7 +465,6 @@ function FollowUpsSection({
                   setExpanded((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
                 }
                 initialTop={INITIAL_TOP}
-                onEmail={onEmail}
                 onRefresh={onRefresh}
               />
             ))}
@@ -583,7 +492,6 @@ function FollowUpsSection({
                   setExpanded((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
                 }
                 initialTop={INITIAL_TOP}
-                onEmail={onEmail}
                 onRefresh={onRefresh}
               />
             ))}
@@ -595,7 +503,7 @@ function FollowUpsSection({
 }
 
 function FollowUpGroup({
-  label, stripe, badgeBg, badgeFg, items, expanded, onToggle, initialTop, onEmail, onRefresh,
+  label, stripe, badgeBg, badgeFg, items, expanded, onToggle, initialTop, onRefresh,
 }: {
   groupKey: string;
   label: string;
@@ -606,7 +514,6 @@ function FollowUpGroup({
   expanded: boolean;
   onToggle: () => void;
   initialTop: number;
-  onEmail: (fu: FollowUp) => void;
   onRefresh: () => void;
 }) {
   if (items.length === 0) return null;
@@ -645,7 +552,6 @@ function FollowUpGroup({
               key={item.lead_id}
               fu={item}
               stripeColor={stripe}
-              onEmail={onEmail}
               onRefresh={onRefresh}
             />
           ))}
@@ -668,7 +574,6 @@ function FollowUpCard({
 }: {
   fu: FollowUp;
   stripeColor: string;
-  onEmail: (fu: FollowUp) => void;  // kept for prop compat; unused now
   onRefresh: () => void;
 }) {
   const [busy, setBusy] = useState(false);

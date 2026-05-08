@@ -26,8 +26,6 @@ class EnrichmentLog(Base):
     )
     credits_used: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(20), default="ok", nullable=False)
-    # matched_fields 用空格分隔存储，避免一个字段一行
-    matched_fields: Mapped[Optional[str]] = mapped_column(String(200))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

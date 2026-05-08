@@ -588,7 +588,7 @@ async def delete_contact(
 ):
     """
     Permanently delete a contact and all its dependent records
-    (activities / leads / sent_emails cascade). Admin only.
+    (activities / leads cascade). Admin only.
 
     用于清理测试数据 / 误录入的联系人。对应前端"Delete"按钮。
     """
@@ -602,9 +602,7 @@ async def delete_contact(
     # 级联清理依赖表（contacts 表的外键是 RESTRICT 不是 CASCADE，必须手动删）
     from app.models.activity import Activity
     from app.models.lead import Lead
-    from app.models.sent_email import SentEmail
 
-    await db.execute(SentEmail.__table__.delete().where(SentEmail.contact_id == contact_id))
     await db.execute(Activity.__table__.delete().where(Activity.contact_id == contact_id))
     await db.execute(Lead.__table__.delete().where(Lead.contact_id == contact_id))
     await db.delete(contact)
@@ -796,7 +794,6 @@ async def enrich_contact(
         contact_id=contact_id,
         credits_used=1,
         status="ok",
-        matched_fields=" ".join(enriched_fields),
     ))
     await db.flush()
 

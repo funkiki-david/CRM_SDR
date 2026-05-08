@@ -25,25 +25,9 @@ class Settings(BaseSettings):
     # === AI (Anthropic only — single provider) ===
     ANTHROPIC_API_KEY: str = ""
 
-    # === Google OAuth (Gmail send + profile) ===
-    # 在 Google Cloud Console → APIs & Services → Credentials 建 OAuth 2.0 Client (Web)
-    # 授权回调地址必须跟 GOOGLE_OAUTH_REDIRECT_URI 一致
-    GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_OAUTH_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
-
-    # 前端基地址 —— OAuth 回调完成后跳回前端
-    # Frontend base URL — where to send the user after OAuth completes
+    # 前端基地址 —— 用于 redirect / 邮件链接等
+    # Frontend base URL
     FRONTEND_BASE_URL: str = "http://localhost:3000"
-
-    # === Test / development email recipient ===
-    # Default recipient for any test or dev email-send logic. Always route
-    # test sends through the shared team mailbox — never a Manager's personal
-    # Gmail (Doug, Steve, etc.). Override per-environment via TEST_EMAIL_RECIPIENT.
-    TEST_EMAIL_RECIPIENT: str = "marketing@graphictac.biz"
-
-    # DISABLED: Using Claude direct search instead of OpenAI embeddings
-    # OPENAI_API_KEY: str = ""
 
     @field_validator("DATABASE_URL", mode="after")
     @classmethod
@@ -65,7 +49,6 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-        # ignore unknown env vars (e.g. EMAIL_1_* read by seed scripts)
         extra = "ignore"
 
 
@@ -77,7 +60,6 @@ settings = Settings()
 # All AI features use Haiku 4.5 — change here to switch model everywhere
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 CLAUDE_MAX_TOKENS_RESEARCH = 2000   # Person/company research reports
-CLAUDE_MAX_TOKENS_EMAIL = 800       # Email drafting
 CLAUDE_MAX_TOKENS_SEARCH = 1000     # Smart search
 AI_SEARCH_ACTIVITY_LIMIT = 500      # How many activities to feed into search context
 

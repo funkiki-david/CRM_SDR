@@ -9,7 +9,6 @@ import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/app-shell";
 import QuickEntry from "@/components/quick-entry";
-import EmailCompose from "@/components/email-compose";
 import AddContact from "@/components/add-contact";
 import ImportContacts from "@/components/import-contacts";
 import { useAIBudget, AIBudgetBadge, AILimitModal } from "@/components/ai-budget";
@@ -23,14 +22,6 @@ import { EditableField } from "@/components/editable-field";
 import EditActivity from "@/components/edit-activity";
 import { contactsApi, activitiesApi, aiApi, tasksApi } from "@/lib/api";
 import ActivityComments from "@/components/social/activity-comments";
-// FROZEN 2026-05-07: TeamNotes referenced only inside a `{false && (...)}`
-// dead-code branch below. Bundler tree-shakes; restoring is a one-character
-// edit (search "FROZEN 2026-05-07" in this file).
-import TeamNotes from "@/components/social/team-notes";
-import SendCreditsModal from "@/components/social/send-credits-modal";
-import CreditsToast from "@/components/social/credits-toast";
-import { MOCK_TIMELINE_ACTIVITIES } from "@/lib/social-mock";
-import { findTeamMember, CURRENT_USER_ID } from "@/lib/team-mock";
 
 // === Type definitions ===
 
@@ -252,25 +243,11 @@ function ContactsContent() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
 
-  // Social mockup — Send Credits modal state.
-  const [myCredits, setMyCredits] = useState(
-    () => findTeamMember(CURRENT_USER_ID)?.credits ?? 0
-  );
-  const [sendCreditsTo, setSendCreditsTo] = useState<number | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  function handleSendCredits(recipientUserId: number, amount: number, message: string) {
-    const recipient = findTeamMember(recipientUserId);
-    setMyCredits((c) => c - amount);
-    setSendCreditsTo(null);
-    const msgFragment = message ? ` — "${message}"` : "";
-    setToastMessage(`💎 Sent ${amount} credits to ${recipient?.name ?? "teammate"}${msgFragment}`);
-  }
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
-  const [emailComposeOpen, setEmailComposeOpen] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState<EnrichResponse | null>(null);
   const [enrichError, setEnrichError] = useState<string | null>(null);
@@ -403,16 +380,6 @@ function ContactsContent() {
   function handleSelectContact(contact: Contact) {
     setSelectedContact(contact);
     loadActivities(contact.id);
-  }
-
-  // Parse AI tags (stored as JSON string)
-  function parseTags(tagsStr: string | null): string[] {
-    if (!tagsStr) return [];
-    try {
-      return JSON.parse(tagsStr);
-    } catch {
-      return tagsStr.split(",").map((t) => t.trim()).filter(Boolean);
-    }
   }
 
   return (
@@ -717,21 +684,6 @@ function ContactsContent() {
                         </Button>
                       );
                     })()}
-                    {/* FROZEN 2026-05-05: Send Email button hidden until email
-                        feature is developed. Restore by deleting this comment
-                        wrapper. EmailCompose dialog mount + state are kept
-                        below so the button can be reactivated in one step. */}
-                    {false && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled
-                        title="Email sending paused"
-                        className="cursor-not-allowed bg-slate-100 text-slate-400"
-                      >
-                        Send Email
-                      </Button>
-                    )}
                     <Button
                       size="sm"
                       variant="outline"
@@ -866,26 +818,6 @@ function ContactsContent() {
                   />
                 </div>
               </div>
-
-              {/* FROZEN 2026-05-06: Industry Tags section hidden — not actively
-                  used yet. Data fetching + parseTags helper are kept; this only
-                  hides the visual section. Restore by changing `false` to `true`.
-                  Non-null assertions on selectedContact are sound — TypeScript
-                  loses narrowing through the `false &&` dead-code wrapper, but
-                  the runtime value comes from the outer `{selectedContact && (...)}`
-                  detail-panel guard further up. */}
-              {false && selectedContact!.ai_tags && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Tags</h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {parseTags(selectedContact!.ai_tags).map((tag, i) => (
-                      <Badge key={i} variant="secondary" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Notes — inline single-line label like City/State (compacted 2026-05-06).
                   Hidden when empty. EditableField stays so click-to-edit still works. */}
@@ -1061,17 +993,11 @@ function ContactsContent() {
                 </h3>
                 {activitiesLoading ? (
                   <p className="text-sm text-gray-400">Loading activities...</p>
+                ) : activities.length === 0 ? (
+                  <p className="text-sm text-gray-400">No activities recorded yet.</p>
                 ) : (
-                  // Social mockup \u00A73.4: empty real list \u2192 fall back to
-                  // MOCK_TIMELINE_ACTIVITIES so the comments / reactions
-                  // toolbar has rows to demonstrate.
                   <div className="space-y-3">
-                    {activities.length === 0 && (
-                      <p className="text-xs text-slate-400 italic">
-                        No activities recorded yet \u2014 showing a sample timeline so you can preview teammate reactions.
-                      </p>
-                    )}
-                    {(activities.length === 0 ? MOCK_TIMELINE_ACTIVITIES : activities).map((activity) => (
+                    {activities.map((activity) => (
                       <div
                         key={activity.id}
                         className="group p-3 rounded-md bg-gray-50 relative"
@@ -1105,54 +1031,39 @@ function ContactsContent() {
                             </p>
                           )}
                         </div>
-                        {/* Edit / Delete (Problem 3) — appear on hover.
-                            Hidden for mock rows (id < 0). */}
-                        {activity.id >= 0 && (
-                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                            <button
-                              onClick={() => setEditingActivity(activity as Activity)}
-                              title="Edit activity"
-                              className="text-slate-400 hover:text-slate-600 text-xs px-1"
-                            >
-                              ✏️
-                            </button>
-                            <button
-                              onClick={async () => {
-                                if (!confirm("Delete this activity? This cannot be undone.")) return;
-                                try {
-                                  await activitiesApi.delete(activity.id);
-                                  setActivities(prev => prev.filter(a => a.id !== activity.id));
-                                } catch (e) {
-                                  alert(e instanceof Error ? e.message : "Delete failed");
-                                }
-                              }}
-                              title="Delete activity"
-                              className="text-slate-400 hover:text-slate-600 text-xs px-1"
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        )}
+                        {/* Edit / Delete — appear on hover. */}
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                          <button
+                            onClick={() => setEditingActivity(activity as Activity)}
+                            title="Edit activity"
+                            className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm("Delete this activity? This cannot be undone.")) return;
+                              try {
+                                await activitiesApi.delete(activity.id);
+                                setActivities(prev => prev.filter(a => a.id !== activity.id));
+                              } catch (e) {
+                                alert(e instanceof Error ? e.message : "Delete failed");
+                              }
+                            }}
+                            title="Delete activity"
+                            className="text-slate-400 hover:text-slate-600 text-xs px-1"
+                          >
+                            🗑️
+                          </button>
                         </div>
-                        {/* Social toolbar — stars + reactions + comments */}
-                        <ActivityComments
-                          activityId={activity.id}
-                          onSendCredits={(uid) => setSendCreditsTo(uid)}
-                        />
+                        </div>
+                        {/* Comment thread (real DB-backed, see backend/api/routes/activity_social.py) */}
+                        <ActivityComments activityId={activity.id} />
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-
-              {/* FROZEN 2026-05-07: TeamNotes hidden — Activity Comments
-                  (real-functionalized in Spec 1) is now the canonical team-
-                  collaboration channel for a contact. TeamNotes lacked an
-                  activity anchor and duplicated the comment surface. Restore
-                  by changing `false` to `true` below. Non-null assertion is
-                  sound — the runtime guard is the outer `{selectedContact && (...)}`
-                  detail-panel wrapper further up. */}
-              {false && <TeamNotes contactId={selectedContact!.id} />}
 
               {/* --- Phase C: contact-specific Suggestions panel --- */}
               <ContactSuggestions
@@ -1163,21 +1074,6 @@ function ContactsContent() {
           )}
         </div>
       </div>
-
-      {/* Email compose dialog */}
-      {selectedContact && (
-        <EmailCompose
-          open={emailComposeOpen}
-          onClose={() => setEmailComposeOpen(false)}
-          contactId={selectedContact.id}
-          contactName={`${selectedContact.first_name} ${selectedContact.last_name}`}
-          contactEmail={selectedContact.email}
-          onSuccess={() => {
-            if (selectedContact) loadActivities(selectedContact.id);
-            setEmailComposeOpen(false);
-          }}
-        />
-      )}
 
       {/* Add Contact modal */}
       <AddContact
@@ -1285,14 +1181,6 @@ function ContactsContent() {
         }}
       />
 
-      {/* Social mockup — Send Credits modal + toast (shared by ActivityComments + TeamNotes) */}
-      <SendCreditsModal
-        recipientUserId={sendCreditsTo}
-        balance={myCredits}
-        onSend={handleSendCredits}
-        onClose={() => setSendCreditsTo(null)}
-      />
-      <CreditsToast message={toastMessage} onClose={() => setToastMessage(null)} />
     </AppShell>
   );
 }

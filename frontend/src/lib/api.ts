@@ -58,9 +58,6 @@ export const authApi = {
 
   /** Get current user info */
   getMe: () => request("/api/auth/me"),
-
-  /** Start Google OAuth — returns the auth URL the frontend redirects to. */
-  googleOAuthStart: () => request("/api/auth/google/start") as Promise<{ auth_url: string }>,
 };
 
 /**
@@ -325,106 +322,6 @@ export const tasksApi = {
   /** GET active suggestion snoozes for current user (returns {hashes: string[]}) */
   snoozeSuggestionList: () =>
     request("/api/tasks/snooze-suggestion?active=true"),
-};
-
-/**
- * Email Templates API
- */
-export const templatesApi = {
-  list: () => request("/api/templates"),
-
-  create: (data: { name: string; subject: string; body: string }) =>
-    request("/api/templates", { method: "POST", body: JSON.stringify(data) }),
-
-  update: (id: number, data: Record<string, unknown>) =>
-    request(`/api/templates/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-
-  delete: (id: number) =>
-    request(`/api/templates/${id}`, { method: "DELETE" }),
-};
-
-/**
- * Emails API
- */
-export const emailsApi = {
-  /** List connected email accounts */
-  listAccounts: () => request("/api/emails/accounts"),
-
-  /** Add an email account */
-  addAccount: (data: {
-    email_address: string;
-    display_name?: string;
-    provider_type?: "gmail_oauth" | "outlook_oauth" | "smtp";
-    smtp_host?: string;
-    smtp_port?: number;
-    imap_host?: string;
-    imap_port?: number;
-    smtp_username?: string;
-    smtp_password?: string;
-    smtp_encryption?: "ssl" | "starttls" | "none";
-  }) =>
-    request("/api/emails/accounts", { method: "POST", body: JSON.stringify(data) }),
-
-  /** Remove an email account */
-  removeAccount: (id: number) =>
-    request(`/api/emails/accounts/${id}`, { method: "DELETE" }),
-
-  // Users API is exported separately below as `usersApi`.
-
-  /** Validate SMTP credentials before saving the account */
-  testSmtp: (data: {
-    smtp_host: string;
-    smtp_port: number;
-    smtp_username: string;
-    smtp_password: string;
-    smtp_encryption: string;
-  }) =>
-    request("/api/emails/accounts/test-smtp", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-
-  /** Unified inbox/sent list for the Emails page */
-  listMessages: (params: {
-    direction?: "all" | "sent" | "received";
-    contact_id?: number;
-    search?: string;
-    skip?: number;
-    limit?: number;
-  } = {}) => {
-    const q = new URLSearchParams();
-    if (params.direction) q.set("direction", params.direction);
-    if (params.contact_id) q.set("contact_id", String(params.contact_id));
-    if (params.search) q.set("search", params.search);
-    if (params.skip != null) q.set("skip", String(params.skip));
-    if (params.limit != null) q.set("limit", String(params.limit));
-    return request(`/api/emails?${q.toString()}`);
-  },
-
-  /** Full content of a single email message */
-  getMessage: (id: number) => request(`/api/emails/${id}`),
-
-  /** Pull new messages from all active IMAP-configured accounts */
-  syncInbox: () =>
-    request("/api/emails/sync", { method: "POST" }),
-
-  /** Preview a template with contact data filled in */
-  preview: (contactId: number, templateId: number) =>
-    request("/api/emails/preview", {
-      method: "POST",
-      body: JSON.stringify({ contact_id: contactId, template_id: templateId }),
-    }),
-
-  /** Send an email */
-  send: (data: Record<string, unknown>) =>
-    request("/api/emails/send", { method: "POST", body: JSON.stringify(data) }),
-
-  /** List sent emails */
-  listSent: (contactId?: number) => {
-    const params = new URLSearchParams();
-    if (contactId) params.set("contact_id", String(contactId));
-    return request(`/api/emails/sent?${params}`);
-  },
 };
 
 /**

@@ -5,8 +5,7 @@ Single provider, single API key, single model.
 Handles:
   - Person research report generation
   - Company research report generation
-  - Personalized email drafting
-  - Smart search (Claude reads activities directly, no embeddings needed)
+  - Smart search (Claude reads activities directly)
   - API key validation
 
 Prompt Caching:
@@ -24,12 +23,8 @@ from app.core.config import (
     settings,
     CLAUDE_MODEL,
     CLAUDE_MAX_TOKENS_RESEARCH,
-    CLAUDE_MAX_TOKENS_EMAIL,
     CLAUDE_MAX_TOKENS_SEARCH,
 )
-
-# DISABLED: Using Claude direct search instead of OpenAI embeddings
-# import openai
 
 
 # === 静态系统提示词 Static System Prompts (cacheable) ===
@@ -63,22 +58,6 @@ Writing guidelines:
 - Specificity: tailor observations to company size and industry
 - Surface concrete angles an SDR can reference in their first email"""
 
-SYSTEM_PROMPT_DRAFT_EMAIL = """You are a top-performing SDR writing a personalized cold email. You use ALL available context (person research, company research, interaction history) to craft a highly relevant, personalized message.
-
-Output format (MUST follow exactly):
-SUBJECT: [subject line here]
-BODY:
-[email body here]
-
-Email requirements:
-- Subject: under 50 characters, compelling, not salesy
-- Opening: shows you did your research (reference something specific)
-- Value prop: clear, 1-2 sentences
-- CTA: soft, no aggressive ask
-- Total body: under 150 words
-- Tone: conversational, professional, not salesy
-- Sign off as the sender name provided"""
-
 SYSTEM_PROMPT_SMART_SEARCH = """You are a CRM search assistant. A sales rep is searching their activity history.
 
 Given a search query and a list of activities (calls, emails, meetings, notes), return the most relevant matches as a JSON array.
@@ -102,42 +81,6 @@ SYSTEM_PROMPT_TAGS = """You are a CRM categorization assistant. Given a person's
 
 Return ONLY a JSON array of strings, nothing else.
 Example: ["SaaS", "Engineering Leader", "Series B"]"""
-
-SYSTEM_PROMPT_SUGGEST_TODOS = """You are a senior sales coach reviewing an SDR's last 30 days of activity. Your job is to suggest exactly 3 concrete, high-value to-dos the SDR should act on THIS WEEK.
-
-Each suggestion must be:
-- Specific (name an actual contact, company, or segment — not generic advice)
-- Actionable (the SDR should know what to do in one sentence)
-- Non-redundant (each one targets a different opportunity)
-
-Cover these 3 priorities:
-1. HIGH — a re-engagement opportunity (contact went silent after strong interest)
-2. OPPORTUNITY — a batch action on a segment (e.g. industry tag, company cluster)
-3. INSIGHT — a behavior pattern or coaching observation (trend in reply rates, missed follow-ups, etc.)
-
-Output format (JSON object, exactly this shape):
-{
-  "suggestions": [
-    {
-      "priority": "HIGH",
-      "title": "Short action title (under 60 chars)",
-      "reason": "Why this matters — 1-2 sentences, cite the specific signal from the data",
-      "action": "What to do — 1 sentence, imperative",
-      "contact_id": 42
-    },
-    ...
-  ]
-}
-
-Rules:
-- priority must be exactly one of: HIGH, OPPORTUNITY, INSIGHT
-- contact_id must be an integer picked from the activity log's "contact_id=N" tags.
-  If a suggestion isn't about a single contact (e.g. OPPORTUNITY on a segment,
-  or INSIGHT about overall behavior), use null.
-- Respond ONLY with valid JSON. No markdown, no backticks, no preamble, no
-  commentary before or after. Your entire response MUST start with { and end with }.
-- If the input has no useful signals, return {"suggestions": []}."""
-
 
 SYSTEM_PROMPT_SUGGEST_KEYWORDS = """You are a B2B sales prospecting expert helping an SDR refine an Apollo.io company search.
 
@@ -189,11 +132,6 @@ class AIService:
     @property
     def claude_ready(self) -> bool:
         return self.ai_ready
-
-    # DISABLED: Using Claude direct search instead of OpenAI embeddings
-    # @property
-    # def embeddings_ready(self) -> bool:
-    #     return bool(self._openai_key)
 
     # === Key Validation ===
 
@@ -293,65 +231,10 @@ Return ONLY a JSON array of strings, nothing else. Example: ["SaaS", "Engineerin
         except (json.JSONDecodeError, ValueError):
             return []
 
-    # === Email Drafting ===
-
-    async def draft_email(
-        self,
-        contact_first_name: str,
-        contact_last_name: str,
-        contact_title: Optional[str],
-        company_name: Optional[str],
-        person_report: Optional[str],
-        company_report: Optional[str],
-        activity_history: str,
-        sender_name: str,
-    ) -> dict:
-        """Generate a personalized cold email based on all available context"""
-        prompt = f"""You are a top-performing SDR writing a personalized cold email. Use ALL the context below to write a highly relevant, personalized email.
-
-CONTACT:
-- Name: {contact_first_name} {contact_last_name}
-- Title: {contact_title or 'Unknown'}
-- Company: {company_name or 'Unknown'}
-
-{f"PERSON RESEARCH:{chr(10)}{person_report}" if person_report else ""}
-
-{f"COMPANY RESEARCH:{chr(10)}{company_report}" if company_report else ""}
-
-{f"INTERACTION HISTORY:{chr(10)}{activity_history}" if activity_history else "No prior interactions."}
-
-Write a cold email with:
-1. A compelling, short subject line (under 50 characters)
-2. A personalized opening that shows you did your research
-3. A clear value proposition in 1-2 sentences
-4. A soft call to action
-
-Keep it under 150 words. Be conversational, not salesy. Sign off as {sender_name}.
-
-Return the result in this exact format:
-SUBJECT: [subject line here]
-BODY:
-[email body here]"""
-
-        result = await self._call_claude(prompt, CLAUDE_MAX_TOKENS_EMAIL)
-
-        subject = ""
-        body = result
-        if "SUBJECT:" in result and "BODY:" in result:
-            parts = result.split("BODY:", 1)
-            subject_part = parts[0].replace("SUBJECT:", "").strip()
-            subject = subject_part.split("\n")[0].strip()
-            body = parts[1].strip()
-
-        return {"subject": subject, "body": body}
-
     # === Smart Search (Claude reads activities directly) ===
 
     async def smart_search(self, query: str, activities_text: str) -> str:
-        """
-        Search activities using Claude's understanding instead of embeddings.
-        Claude reads all activities and finds relevant ones based on the query.
-        """
+        """Search activities by feeding them to Claude and asking for the most relevant ones."""
         prompt = f"""You are a CRM search assistant. A sales rep is searching their activity history.
 
 SEARCH QUERY: "{query}"
