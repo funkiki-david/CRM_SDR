@@ -20,9 +20,6 @@ pydantic==2.11.1
 pydantic-settings==2.8.1  # 从环境变量读配置
 email-validator==2.2.0
 
-# 向量数据库（语义搜索用）
-pgvector==0.3.6
-
 # Redis 缓存
 redis==5.3.0
 

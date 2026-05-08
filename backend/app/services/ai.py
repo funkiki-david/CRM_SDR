@@ -169,11 +169,6 @@ class AIService:
     def claude_ready(self) -> bool:
         return self.ai_ready
 
-    # DISABLED: Using Claude direct search instead of OpenAI embeddings
-    # @property
-    # def embeddings_ready(self) -> bool:
-    #     return bool(self._openai_key)
-
     # === Key Validation ===
 
     async def validate_key(self) -> bool:
@@ -275,10 +270,7 @@ Return ONLY a JSON array of strings, nothing else. Example: ["SaaS", "Engineerin
     # === Smart Search (Claude reads activities directly) ===
 
     async def smart_search(self, query: str, activities_text: str) -> str:
-        """
-        Search activities using Claude's understanding instead of embeddings.
-        Claude reads all activities and finds relevant ones based on the query.
-        """
+        """Search activities by feeding them to Claude and asking for the most relevant ones."""
         prompt = f"""You are a CRM search assistant. A sales rep is searching their activity history.
 
 SEARCH QUERY: "{query}"

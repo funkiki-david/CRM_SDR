@@ -1,8 +1,7 @@
 """
 数据库初始化 — 系统启动时自动执行
-1. 启用 pgvector 扩展（语义搜索需要）
-2. 创建所有数据库表
-3. 如果没有 Admin 用户，创建默认 Admin（David）
+1. 创建所有数据库表
+2. 如果没有 Admin 用户，创建默认 Admin（David）
 """
 
 from sqlalchemy import text
@@ -15,8 +14,6 @@ from app.core.security import hash_password
 async def init_db():
     """初始化数据库：建表 + 迁移字段 + 创建默认 Admin"""
     async with engine.begin() as conn:
-        # 启用 pgvector 扩展
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         # 创建所有表（已存在的表不会重复创建）
         await conn.run_sync(Base.metadata.create_all)
 
