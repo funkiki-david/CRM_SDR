@@ -19,7 +19,6 @@ from app.core.deps import get_current_user, require_role
 from app.core.config import (
     CLAUDE_MODEL,
     CLAUDE_MAX_TOKENS_RESEARCH,
-    CLAUDE_MAX_TOKENS_EMAIL,
     AI_REPORT_CACHE_DAYS,
 )
 from app.models.user import User, UserRole
@@ -30,7 +29,6 @@ from app.services.ai import (
     ai_service,
     SYSTEM_PROMPT_RESEARCH_PERSON,
     SYSTEM_PROMPT_RESEARCH_COMPANY,
-    SYSTEM_PROMPT_DRAFT_EMAIL,
     SYSTEM_PROMPT_SUGGEST_TODOS,
     SYSTEM_PROMPT_SUGGEST_KEYWORDS,
 )
@@ -40,9 +38,6 @@ from app.services.ai_budget import (
     get_per_user_daily_limit,
     set_per_user_daily_limit,
 )
-
-# DISABLED: Using Claude direct search instead of pgvector embeddings
-# from app.models.embedding import Embedding
 
 router = APIRouter(prefix="/api/ai", tags=["AI"])
 
@@ -437,126 +432,6 @@ async def delete_company_report(
     contact.ai_company_report = None
     contact.ai_company_generated_at = None
     await db.flush()
-
-
-# === AI Email Drafting ===
-
-class DraftRequest(BaseModel):
-    contact_id: int
-    # 可选：指定从哪个邮箱账号发，影响 AI 签名落款
-    # Optional: selected From-account id — shapes AI signature
-    email_account_id: Optional[int] = None
-
-
-def _infer_company_from_domain(email: str) -> str:
-    """
-    info@amazonsolutions.us → Amazon Solutions
-    marketing@graphictac.biz → Graphictac
-    john@acme-corp.com → Acme Corp
-    """
-    if "@" not in email:
-        return ""
-    domain = email.split("@", 1)[1].split(".")[0]
-    # camel/kebab → space-separated Title Case
-    parts = domain.replace("-", " ").replace("_", " ").split()
-    if not parts:
-        return ""
-    return " ".join(p.capitalize() for p in parts)
-
-
-@router.post("/draft-email")
-async def draft_email(
-    data: DraftRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Generate a personalized email draft — TEMPORARILY FROZEN.
-    Body logic kept intact below; unfreeze by removing the 501 return.
-    """
-    from fastapi.responses import JSONResponse
-    return JSONResponse(
-        status_code=501,
-        content={"error": "Email module is temporarily frozen", "code": "EMAIL_FROZEN"},
-    )
-    # --- frozen: original logic retained for restoration ---
-    if not ai_service.ai_ready:
-        raise HTTPException(status_code=400, detail="Anthropic API key not configured. Add it in Settings.")
-
-    contact = await db.get(Contact, data.contact_id)
-    if contact is None:
-        raise HTTPException(status_code=404, detail="Contact not found")
-
-    # 解析落款 —— 若指定了 email_account_id，用账号的 display_name + 域名推断的公司
-    # Resolve sender signature — if email_account selected, use account's display_name + company
-    sender_name = current_user.full_name
-    sender_company = ""
-    sender_email = ""
-    if data.email_account_id:
-        from app.models.email_account import EmailAccount
-        account = await db.get(EmailAccount, data.email_account_id)
-        if account and account.user_id == current_user.id:
-            sender_name = account.display_name or current_user.full_name
-            sender_email = account.email_address
-            sender_company = _infer_company_from_domain(account.email_address)
-
-    result = await db.execute(
-        select(Activity)
-        .where(Activity.contact_id == contact.id)
-        .order_by(Activity.created_at.desc())
-        .limit(10)
-    )
-    activities = result.scalars().all()
-
-    history_lines = []
-    for act in activities:
-        history_lines.append(
-            f"- [{act.activity_type.value.upper()}] {act.subject or ''}: {act.content or ''}"
-        )
-    activity_history = "\n".join(history_lines) if history_lines else ""
-
-    # Dynamic context only — static SDR persona lives in SYSTEM_PROMPT_DRAFT_EMAIL (cached)
-    person_block = f"PERSON RESEARCH:\n{contact.ai_person_report}" if contact.ai_person_report else ""
-    company_block = f"COMPANY RESEARCH:\n{contact.ai_company_report}" if contact.ai_company_report else ""
-    history_block = f"INTERACTION HISTORY:\n{activity_history}" if activity_history else "No prior interactions."
-
-    # 签名格式：Name, Company（若有 company）
-    signature_line = f"{sender_name}, {sender_company}" if sender_company else sender_name
-
-    prompt = f"""CONTACT:
-- Name: {contact.first_name} {contact.last_name}
-- Title: {contact.title or 'Unknown'}
-- Company: {contact.company_name or 'Unknown'}
-
-{person_block}
-
-{company_block}
-
-{history_block}
-
-Sender name: {sender_name}
-Sender company: {sender_company or 'Unknown'}
-Sender email: {sender_email or 'Unknown'}
-Sign-off line: {signature_line}"""
-
-    result, _log = await call_ai_with_limit(
-        db=db,
-        user=current_user,
-        feature="draft_email",
-        call_fn=lambda: ai_service._call_claude_raw(
-            prompt, CLAUDE_MAX_TOKENS_EMAIL, system=SYSTEM_PROMPT_DRAFT_EMAIL,
-        ),
-    )
-
-    subject = ""
-    body = result
-    if "SUBJECT:" in result and "BODY:" in result:
-        parts = result.split("BODY:", 1)
-        subject_part = parts[0].replace("SUBJECT:", "").strip()
-        subject = subject_part.split("\n")[0].strip()
-        body = parts[1].strip()
-
-    return {"subject": subject, "body": body}
 
 
 # === AI Suggested To-Do ===

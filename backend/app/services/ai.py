@@ -5,8 +5,7 @@ Single provider, single API key, single model.
 Handles:
   - Person research report generation
   - Company research report generation
-  - Personalized email drafting
-  - Smart search (Claude reads activities directly, no embeddings needed)
+  - Smart search (Claude reads activities directly)
   - API key validation
 
 Prompt Caching:
@@ -24,12 +23,8 @@ from app.core.config import (
     settings,
     CLAUDE_MODEL,
     CLAUDE_MAX_TOKENS_RESEARCH,
-    CLAUDE_MAX_TOKENS_EMAIL,
     CLAUDE_MAX_TOKENS_SEARCH,
 )
-
-# DISABLED: Using Claude direct search instead of OpenAI embeddings
-# import openai
 
 
 # === 静态系统提示词 Static System Prompts (cacheable) ===
@@ -62,22 +57,6 @@ Writing guidelines:
 - Tone: direct, professional, actionable — no fluff
 - Specificity: tailor observations to company size and industry
 - Surface concrete angles an SDR can reference in their first email"""
-
-SYSTEM_PROMPT_DRAFT_EMAIL = """You are a top-performing SDR writing a personalized cold email. You use ALL available context (person research, company research, interaction history) to craft a highly relevant, personalized message.
-
-Output format (MUST follow exactly):
-SUBJECT: [subject line here]
-BODY:
-[email body here]
-
-Email requirements:
-- Subject: under 50 characters, compelling, not salesy
-- Opening: shows you did your research (reference something specific)
-- Value prop: clear, 1-2 sentences
-- CTA: soft, no aggressive ask
-- Total body: under 150 words
-- Tone: conversational, professional, not salesy
-- Sign off as the sender name provided"""
 
 SYSTEM_PROMPT_SMART_SEARCH = """You are a CRM search assistant. A sales rep is searching their activity history.
 
@@ -292,58 +271,6 @@ Return ONLY a JSON array of strings, nothing else. Example: ["SaaS", "Engineerin
             return json.loads(cleaned)
         except (json.JSONDecodeError, ValueError):
             return []
-
-    # === Email Drafting ===
-
-    async def draft_email(
-        self,
-        contact_first_name: str,
-        contact_last_name: str,
-        contact_title: Optional[str],
-        company_name: Optional[str],
-        person_report: Optional[str],
-        company_report: Optional[str],
-        activity_history: str,
-        sender_name: str,
-    ) -> dict:
-        """Generate a personalized cold email based on all available context"""
-        prompt = f"""You are a top-performing SDR writing a personalized cold email. Use ALL the context below to write a highly relevant, personalized email.
-
-CONTACT:
-- Name: {contact_first_name} {contact_last_name}
-- Title: {contact_title or 'Unknown'}
-- Company: {company_name or 'Unknown'}
-
-{f"PERSON RESEARCH:{chr(10)}{person_report}" if person_report else ""}
-
-{f"COMPANY RESEARCH:{chr(10)}{company_report}" if company_report else ""}
-
-{f"INTERACTION HISTORY:{chr(10)}{activity_history}" if activity_history else "No prior interactions."}
-
-Write a cold email with:
-1. A compelling, short subject line (under 50 characters)
-2. A personalized opening that shows you did your research
-3. A clear value proposition in 1-2 sentences
-4. A soft call to action
-
-Keep it under 150 words. Be conversational, not salesy. Sign off as {sender_name}.
-
-Return the result in this exact format:
-SUBJECT: [subject line here]
-BODY:
-[email body here]"""
-
-        result = await self._call_claude(prompt, CLAUDE_MAX_TOKENS_EMAIL)
-
-        subject = ""
-        body = result
-        if "SUBJECT:" in result and "BODY:" in result:
-            parts = result.split("BODY:", 1)
-            subject_part = parts[0].replace("SUBJECT:", "").strip()
-            subject = subject_part.split("\n")[0].strip()
-            body = parts[1].strip()
-
-        return {"subject": subject, "body": body}
 
     # === Smart Search (Claude reads activities directly) ===
 

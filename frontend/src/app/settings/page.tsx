@@ -1,10 +1,5 @@
 /**
- * Settings Page — Manage email accounts and system configuration
- * Currently supports:
- *   - Connect/disconnect Gmail accounts
- * Future:
- *   - Apollo API Key
- *   - Team member management
+ * Settings Page — API keys, team members, AI usage budget
  */
 "use client";
 
@@ -14,23 +9,9 @@ import AppShell from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { emailsApi, settingsApi, authApi, aiApi } from "@/lib/api";
-import AddEmailAccount from "@/components/add-email-account";
+import { settingsApi, authApi, aiApi } from "@/lib/api";
 import TeamMembers from "@/components/team-members";
 import AIUsageAdmin from "@/components/ai-usage-admin";
-
-interface EmailAccount {
-  id: number;
-  email_address: string;
-  display_name: string | null;
-  provider_type: string;
-  is_active: boolean;
-  smtp_host?: string | null;
-  last_test_error?: string | null;
-  created_at: string;
-}
 
 interface MyUsage {
   spent_today: number;
@@ -41,8 +22,6 @@ interface MyUsage {
 
 const NAV_SECTIONS = [
   { id: "team", label: "Team" },
-  // FROZEN 2026-05-05: Email tab hidden until email feature is developed.
-  // { id: "email", label: "Email" },
   { id: "integrations", label: "Integrations" },
   { id: "budget", label: "Budget" },
   { id: "danger", label: "Danger zone" },
@@ -50,8 +29,6 @@ const NAV_SECTIONS = [
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [accounts, setAccounts] = useState<EmailAccount[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Apollo API key
   const [apolloKey, setApolloKey] = useState("");
@@ -70,12 +47,6 @@ export default function SettingsPage() {
   const [anthropicMessage, setAnthropicMessage] = useState("");
   const [anthropicValid, setAnthropicValid] = useState<boolean | null>(null);
 
-  // Add email account modal
-  const [addModalOpen, setAddModalOpen] = useState(false);
-
-  // OAuth callback toast (Google redirects back with ?gmail=connected|error)
-  const [oauthMessage, setOauthMessage] = useState<{ ok: boolean; text: string } | null>(null);
-
   // Current user (for Team Members Admin-only controls)
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<"admin" | "manager" | "sdr" | null>(null);
@@ -85,17 +56,6 @@ export default function SettingsPage() {
 
   // Active nav section — anchor highlight
   const [activeSection, setActiveSection] = useState<string>("team");
-
-  async function loadAccounts() {
-    try {
-      const data = await emailsApi.listAccounts();
-      setAccounts(data);
-    } catch {
-      setAccounts([]);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function loadApolloStatus() {
     try {
@@ -174,7 +134,6 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    loadAccounts();
     loadApolloStatus();
     loadAnthropicStatus();
     loadMyUsage();
@@ -182,21 +141,6 @@ export default function SettingsPage() {
       setCurrentUserId(u.id);
       setCurrentUserRole(u.role);
     }).catch(() => { /* ignore */ });
-
-    // Read URL query — Google OAuth callback appends ?gmail=connected|error
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const status = params.get("gmail");
-      if (status === "connected") {
-        const email = params.get("email") || "your Gmail account";
-        setOauthMessage({ ok: true, text: `✓ Connected ${email} via Google OAuth.` });
-        window.history.replaceState({}, "", "/settings");
-      } else if (status === "error") {
-        const reason = params.get("reason") || "unknown error";
-        setOauthMessage({ ok: false, text: `Gmail connection failed: ${reason}` });
-        window.history.replaceState({}, "", "/settings");
-      }
-    }
   }, []);
 
   // Highlight the nav item for whichever section is closest to the top
@@ -219,16 +163,6 @@ export default function SettingsPage() {
     sections.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
   }, []);
-
-  async function handleRemove(id: number) {
-    if (!confirm("Remove this email account?")) return;
-    try {
-      await emailsApi.removeAccount(id);
-      loadAccounts();
-    } catch {
-      // ignore
-    }
-  }
 
   return (
     <AppShell>
@@ -271,122 +205,6 @@ export default function SettingsPage() {
         <section id="team" className="scroll-mt-6">
           <TeamMembers currentUserId={currentUserId} currentUserRole={currentUserRole} />
         </section>
-
-        {/* === Email === */}
-        {/* FROZEN 2026-05-05: entire Email section hidden until email feature
-            is developed. Restore by removing the `{false && (` wrapper and
-            its closing `)}` after </section>. */}
-        {false && (
-        <section id="email" className="scroll-mt-6 space-y-6">
-
-        {/* === Email Accounts === */}
-        <Card>
-          <CardHeader>
-            <CardTitle
-              className="font-display font-bold"
-              style={{ fontSize: 18, color: "var(--text-primary)" }}
-            >
-              Email Accounts
-            </CardTitle>
-            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-              Connect Gmail accounts for sending cold emails from within the CRM.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* OAuth callback toast */}
-            {oauthMessage && (
-              <div
-                className={`p-3 rounded border text-sm ${
-                  oauthMessage!.ok
-                    ? "bg-green-50 border-green-200 text-green-700"
-                    : "bg-red-50 border-red-200 text-red-700"
-                }`}
-              >
-                {oauthMessage!.text}
-                <button
-                  onClick={() => setOauthMessage(null)}
-                  className="float-right text-xs opacity-70 hover:opacity-100"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-
-            {/* Current accounts */}
-            {loading ? (
-              <p className="text-sm text-gray-400">Loading...</p>
-            ) : accounts.length === 0 ? (
-              <p className="text-sm text-gray-400">No email accounts connected.</p>
-            ) : (
-              <div className="space-y-2">
-                {accounts.map((acc) => (
-                  <div
-                    key={acc.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-md"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <p className="text-sm font-medium">{acc.email_address}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {acc.display_name && (
-                            <p className="text-xs text-gray-400">{acc.display_name}</p>
-                          )}
-                          <Badge variant="outline" className="text-[10px] py-0 px-1.5">
-                            {acc.provider_type === "smtp" ? "SMTP" :
-                             acc.provider_type === "gmail_oauth" ? "Gmail" :
-                             acc.provider_type === "outlook_oauth" ? "Outlook" :
-                             acc.provider_type}
-                          </Badge>
-                          {acc.smtp_host && (
-                            <span className="text-[10px] text-gray-400">{acc.smtp_host}</span>
-                          )}
-                        </div>
-                        {acc.last_test_error && (
-                          <p className="text-[10px] text-red-500 mt-1">⚠ {acc.last_test_error}</p>
-                        )}
-                      </div>
-                      <Badge variant={acc.is_active ? "secondary" : "outline"} className="text-xs">
-                        {acc.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-500 hover:text-red-700"
-                      onClick={() => handleRemove(acc.id)}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-700">Add Email Account</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Gmail / Outlook / any SMTP server
-                </p>
-              </div>
-              {/* Email sending is temporarily frozen — button disabled,
-                  modal intentionally never opens. Existing accounts above
-                  still render (schema preserved). */}
-              <Button
-                disabled
-                title="Coming soon — email sending is temporarily disabled"
-                className="cursor-not-allowed bg-slate-100 text-slate-400 hover:bg-slate-100"
-              >
-                + Add Account
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        </section>
-        )}
 
         {/* === Integrations: Apollo + Anthropic === */}
         <section id="integrations" className="scroll-mt-6 space-y-6">
@@ -610,11 +428,6 @@ export default function SettingsPage() {
           </main>
         </div>
       </div>
-
-      {/* NOTE: AddEmailAccount modal intentionally not rendered — email
-          sending is temporarily frozen. Component import and the
-          addModalOpen state are left in place so unfreezing is a
-          one-line restoration (add <AddEmailAccount> back). */}
     </AppShell>
   );
 }

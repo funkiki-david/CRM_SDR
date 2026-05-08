@@ -9,7 +9,6 @@ import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import AppShell from "@/components/app-shell";
 import QuickEntry from "@/components/quick-entry";
-import EmailCompose from "@/components/email-compose";
 import AddContact from "@/components/add-contact";
 import ImportContacts from "@/components/import-contacts";
 import { useAIBudget, AIBudgetBadge, AILimitModal } from "@/components/ai-budget";
@@ -270,7 +269,6 @@ function ContactsContent() {
   const [loading, setLoading] = useState(true);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
-  const [emailComposeOpen, setEmailComposeOpen] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichResult, setEnrichResult] = useState<EnrichResponse | null>(null);
   const [enrichError, setEnrichError] = useState<string | null>(null);
@@ -717,21 +715,6 @@ function ContactsContent() {
                         </Button>
                       );
                     })()}
-                    {/* FROZEN 2026-05-05: Send Email button hidden until email
-                        feature is developed. Restore by deleting this comment
-                        wrapper. EmailCompose dialog mount + state are kept
-                        below so the button can be reactivated in one step. */}
-                    {false && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled
-                        title="Email sending paused"
-                        className="cursor-not-allowed bg-slate-100 text-slate-400"
-                      >
-                        Send Email
-                      </Button>
-                    )}
                     <Button
                       size="sm"
                       variant="outline"
@@ -1163,21 +1146,6 @@ function ContactsContent() {
           )}
         </div>
       </div>
-
-      {/* Email compose dialog */}
-      {selectedContact && (
-        <EmailCompose
-          open={emailComposeOpen}
-          onClose={() => setEmailComposeOpen(false)}
-          contactId={selectedContact.id}
-          contactName={`${selectedContact.first_name} ${selectedContact.last_name}`}
-          contactEmail={selectedContact.email}
-          onSuccess={() => {
-            if (selectedContact) loadActivities(selectedContact.id);
-            setEmailComposeOpen(false);
-          }}
-        />
-      )}
 
       {/* Add Contact modal */}
       <AddContact
