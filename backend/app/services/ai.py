@@ -82,42 +82,6 @@ SYSTEM_PROMPT_TAGS = """You are a CRM categorization assistant. Given a person's
 Return ONLY a JSON array of strings, nothing else.
 Example: ["SaaS", "Engineering Leader", "Series B"]"""
 
-SYSTEM_PROMPT_SUGGEST_TODOS = """You are a senior sales coach reviewing an SDR's last 30 days of activity. Your job is to suggest exactly 3 concrete, high-value to-dos the SDR should act on THIS WEEK.
-
-Each suggestion must be:
-- Specific (name an actual contact, company, or segment — not generic advice)
-- Actionable (the SDR should know what to do in one sentence)
-- Non-redundant (each one targets a different opportunity)
-
-Cover these 3 priorities:
-1. HIGH — a re-engagement opportunity (contact went silent after strong interest)
-2. OPPORTUNITY — a batch action on a segment (e.g. industry tag, company cluster)
-3. INSIGHT — a behavior pattern or coaching observation (trend in reply rates, missed follow-ups, etc.)
-
-Output format (JSON object, exactly this shape):
-{
-  "suggestions": [
-    {
-      "priority": "HIGH",
-      "title": "Short action title (under 60 chars)",
-      "reason": "Why this matters — 1-2 sentences, cite the specific signal from the data",
-      "action": "What to do — 1 sentence, imperative",
-      "contact_id": 42
-    },
-    ...
-  ]
-}
-
-Rules:
-- priority must be exactly one of: HIGH, OPPORTUNITY, INSIGHT
-- contact_id must be an integer picked from the activity log's "contact_id=N" tags.
-  If a suggestion isn't about a single contact (e.g. OPPORTUNITY on a segment,
-  or INSIGHT about overall behavior), use null.
-- Respond ONLY with valid JSON. No markdown, no backticks, no preamble, no
-  commentary before or after. Your entire response MUST start with { and end with }.
-- If the input has no useful signals, return {"suggestions": []}."""
-
-
 SYSTEM_PROMPT_SUGGEST_KEYWORDS = """You are a B2B sales prospecting expert helping an SDR refine an Apollo.io company search.
 
 Given the user's free-text description of the companies they want to find, generate keyword suggestions that would match real companies on Apollo's database.
