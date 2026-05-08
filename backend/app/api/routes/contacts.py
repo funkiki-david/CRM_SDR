@@ -794,7 +794,6 @@ async def enrich_contact(
         contact_id=contact_id,
         credits_used=1,
         status="ok",
-        matched_fields=" ".join(enriched_fields),
     ))
     await db.flush()
 
