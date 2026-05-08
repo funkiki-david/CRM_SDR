@@ -101,6 +101,15 @@ async def init_db():
             )
             """,
             "CREATE INDEX IF NOT EXISTS ix_activity_comments_activity_id_created_at ON activity_comments(activity_id, created_at)",
+            # 2026-05-08 trim: drop the email module, embeddings, pgvector
+            # extension, and the matched_fields column on enrichment_log.
+            # All idempotent — IF EXISTS makes re-running these harmless.
+            "DROP TABLE IF EXISTS sent_emails CASCADE",
+            "DROP TABLE IF EXISTS email_templates CASCADE",
+            "DROP TABLE IF EXISTS email_accounts CASCADE",
+            "DROP TABLE IF EXISTS embeddings CASCADE",
+            "ALTER TABLE enrichment_log DROP COLUMN IF EXISTS matched_fields",
+            "DROP EXTENSION IF EXISTS vector",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))
