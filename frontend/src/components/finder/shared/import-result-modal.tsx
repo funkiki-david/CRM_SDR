@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export default function ImportResultModal({ open, stats, onClose }: Props) {
+  const router = useRouter();
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -37,7 +39,14 @@ export default function ImportResultModal({ open, stats, onClose }: Props) {
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={onClose}>Go to Contacts</Button>
+          <Button
+            onClick={() => {
+              onClose();
+              router.push("/contacts");
+            }}
+          >
+            Go to Contacts
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
