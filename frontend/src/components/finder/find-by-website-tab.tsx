@@ -98,7 +98,6 @@ export default function FindByWebsiteTab({ onImportComplete }: Props) {
           <CompanyCard org={result.org} />
           <ColleaguesPanel
             domain={result.queriedDomain}
-            label="Show key contacts at"
             onImportComplete={onImportComplete}
           />
         </>

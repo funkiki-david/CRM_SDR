@@ -123,7 +123,6 @@ export default function FindByEmailTab({ onImportComplete }: Props) {
           />
           <ColleaguesPanel
             domain={domainOf(result.queriedEmail)}
-            label="Show more people at"
             excludeApolloId={result.person.apollo_id}
             onImportComplete={onImportComplete}
           />

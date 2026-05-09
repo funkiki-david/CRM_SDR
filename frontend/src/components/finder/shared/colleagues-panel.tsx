@@ -1,10 +1,14 @@
 /**
  * ColleaguesPanel — shared by Tab 1 (Website) + Tab 2 (Email).
  *
- * Collapsible "Show more people at <domain>" block. Lazy-loads on first
- * expand via apolloApi.search({ organization_domains: [domain], per_page: 10 }).
- * Subsequent expand/collapse cycles do NOT refetch (colleagues !== null guard,
- * per Spec B §5.5 + §6.1 network-panel test).
+ * Toggle is a standalone blue pill button (PATCH-3 §1):
+ *   collapsed → "+ Find more contacts at <domain>"
+ *   expanded  → "× Hide contacts"
+ *
+ * On first expand, lazy-loads via apolloApi.search({
+ *   organization_domains: [domain], per_page: 10
+ * }). Subsequent expand/collapse cycles do NOT refetch
+ * (colleagues !== null guard, per Spec B §5.5 + §6.1 network-panel test).
  */
 "use client";
 
@@ -30,15 +34,12 @@ interface Props {
    *  duplicate the row already shown above the panel). */
   excludeApolloId?: string;
   onImportComplete: (stats: ImportStats) => void;
-  /** Override the default "Show more people at <domain>" header label. */
-  label?: string;
 }
 
 export default function ColleaguesPanel({
   domain,
   excludeApolloId,
   onImportComplete,
-  label,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [colleagues, setColleagues] = useState<Colleague[] | null>(null);
@@ -93,28 +94,29 @@ export default function ColleaguesPanel({
     }
   }
 
-  const headerLabel = label ?? `${open ? "Hide" : "Show"} more people at`;
-
   return (
-    <Card>
-      <CardContent className="p-0">
-        <button
-          type="button"
-          onClick={handleToggle}
-          className="w-full flex items-center px-5 py-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <span
-            className="inline-block w-2 h-2 rounded-full bg-blue-600 mr-2 shrink-0"
-            aria-hidden
-          />
-          <span>
-            {headerLabel}{" "}
-            <span className="font-mono text-slate-900">{domain}</span>
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={handleToggle}
+        className="inline-flex items-center gap-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2.5 transition-colors whitespace-nowrap max-w-full"
+      >
+        <span aria-hidden className="text-base leading-none">
+          {open ? "×" : "+"}
+        </span>
+        {open ? (
+          <span>Hide contacts</span>
+        ) : (
+          <span className="truncate">
+            Find more contacts at{" "}
+            <span className="font-mono">{domain}</span>
           </span>
-        </button>
+        )}
+      </button>
 
-        {open && (
-          <div className="border-t border-slate-100 px-5 py-4">
+      {open && (
+        <Card>
+          <CardContent className="px-5 py-4">
             {loading && (
               <p className="text-sm text-slate-400 text-center py-4">
                 Loading contacts…
@@ -138,10 +140,10 @@ export default function ColleaguesPanel({
                 ))}
               </ul>
             )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 
