@@ -9,11 +9,19 @@
  *   organization_domains: [domain], per_page: 10
  * }). Subsequent expand/collapse cycles do NOT refetch
  * (colleagues !== null guard, per Spec B §5.5 + §6.1 network-panel test).
+ *
+ * Selection model (PATCH-3 §2 + §3):
+ *   - Each contact row has a checkbox; whole-card click also toggles.
+ *   - Bulk Enrich (§3) calls apolloApi.enrich on un-enriched selected ids
+ *     and marks them in enrichedIds + enrichmentData.
+ *   - Bulk Import (§3) only enables when selectedIds ∩ enrichedIds is
+ *     non-empty — David's "must enrich before import" rule.
+ *   - Per-contact Import buttons removed (PATCH-3 §2).
  */
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { apolloApi } from "@/lib/api";
 import type { ImportStats } from "./import-result-modal";
@@ -25,6 +33,7 @@ export interface Colleague {
   name?: string;
   title?: string | null;
   email?: string | null;
+  phone?: string | null;
   linkedin_url?: string | null;
 }
 
@@ -45,7 +54,14 @@ export default function ColleaguesPanel({
   const [colleagues, setColleagues] = useState<Colleague[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [importingId, setImportingId] = useState<string | null>(null);
+
+  // Selection / enrichment state — survives expand/collapse cycles because
+  // it lives at the component top level, not inside the {open && (...)} branch.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [enrichedIds, setEnrichedIds] = useState<Set<string>>(new Set());
+  const [enrichmentData, setEnrichmentData] = useState<Map<string, Colleague>>(
+    new Map()
+  );
 
   async function ensureLoaded() {
     if (colleagues !== null || loading) return;
@@ -75,24 +91,22 @@ export default function ColleaguesPanel({
     if (next) await ensureLoaded();
   }
 
-  async function importOne(c: Colleague) {
-    setImportingId(c.apollo_id);
-    try {
-      const report = (await apolloApi.import([
-        c as unknown as Record<string, unknown>,
-      ])) as { created?: number; updated?: number; skipped?: number };
-      onImportComplete({
-        added: report.created ?? 0,
-        updated: report.updated ?? 0,
-        skipped: report.skipped ?? 0,
-        creditsUsed: 0,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
-    } finally {
-      setImportingId(null);
-    }
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
+
+  // onImportComplete + apolloApi imports stay because §3 will use them.
+  // Suppress the unused warning for now via an underscore-discard pattern.
+  void onImportComplete;
+  void enrichedIds;
+  void enrichmentData;
+  void setEnrichedIds;
+  void setEnrichmentData;
 
   return (
     <div className="space-y-3">
@@ -130,14 +144,22 @@ export default function ColleaguesPanel({
             )}
             {!loading && colleagues && colleagues.length > 0 && (
               <ul className="space-y-2">
-                {colleagues.map((c) => (
-                  <ColleagueRow
-                    key={c.apollo_id}
-                    colleague={c}
-                    importing={importingId === c.apollo_id}
-                    onImport={() => importOne(c)}
-                  />
-                ))}
+                {colleagues.map((c) => {
+                  const selected = selectedIds.has(c.apollo_id);
+                  const enriched = enrichedIds.has(c.apollo_id);
+                  const merged = enriched
+                    ? { ...c, ...(enrichmentData.get(c.apollo_id) ?? {}) }
+                    : c;
+                  return (
+                    <ColleagueRow
+                      key={c.apollo_id}
+                      colleague={merged}
+                      selected={selected}
+                      enriched={enriched}
+                      onToggle={() => toggleSelect(c.apollo_id)}
+                    />
+                  );
+                })}
               </ul>
             )}
           </CardContent>
@@ -149,24 +171,65 @@ export default function ColleaguesPanel({
 
 function ColleagueRow({
   colleague,
-  importing,
-  onImport,
+  selected,
+  enriched,
+  onToggle,
 }: {
   colleague: Colleague;
-  importing: boolean;
-  onImport: () => void;
+  selected: boolean;
+  enriched: boolean;
+  onToggle: () => void;
 }) {
   const fullName =
     colleague.name ||
     [colleague.first_name, colleague.last_name].filter(Boolean).join(" ") ||
     "Unknown";
+  const initials = fullName
+    .split(" ")
+    .filter(Boolean)
+    .map((s) => s[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
-    <li className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+    <li
+      onClick={onToggle}
+      className={`flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer border transition-colors ${
+        selected
+          ? "bg-blue-50 border-blue-200"
+          : "bg-slate-50 border-transparent hover:bg-slate-100"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`Select ${fullName}`}
+        className="h-4 w-4 rounded border-slate-300 text-blue-600 shrink-0"
+      />
+      <div
+        className="flex items-center justify-center rounded-full bg-slate-200 text-slate-600 font-semibold shrink-0"
+        style={{ width: 32, height: 32, fontSize: 12 }}
+        aria-hidden
+      >
+        {initials}
+      </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-900 truncate">{fullName}</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium text-slate-900 truncate">
+            {fullName}
+          </p>
+          {enriched && (
+            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100 text-[10px]">
+              enriched
+            </Badge>
+          )}
+        </div>
         <p className="text-xs text-slate-500 truncate">
           {colleague.title || "—"}
-          {colleague.email && (
+          {enriched && colleague.email && (
             <>
               {" · "}
               <span className="font-mono">{colleague.email}</span>
@@ -174,15 +237,15 @@ function ColleagueRow({
           )}
         </p>
       </div>
-      <Button
-        onClick={onImport}
-        disabled={importing}
-        size="sm"
-        variant="outline"
-        className="shrink-0"
-      >
-        {importing ? "…" : "Import"}
-      </Button>
+      {!enriched && (
+        <span
+          aria-label="Locked — enrich to reveal contact details"
+          title="Enrich to reveal contact details"
+          className="text-slate-400 text-base shrink-0"
+        >
+          🔒
+        </span>
+      )}
     </li>
   );
 }
