@@ -11,16 +11,17 @@
  * (colleagues !== null guard, per Spec B §5.5 + §6.1 network-panel test).
  *
  * Selection model (PATCH-3 §2 + §3):
- *   - Each contact row has a checkbox; whole-card click also toggles.
- *   - Bulk Enrich (§3) calls apolloApi.enrich on un-enriched selected ids
- *     and marks them in enrichedIds + enrichmentData.
- *   - Bulk Import (§3) only enables when selectedIds ∩ enrichedIds is
- *     non-empty — David's "must enrich before import" rule.
- *   - Per-contact Import buttons removed (PATCH-3 §2).
+ *   - Each row has a checkbox; whole-card click also toggles.
+ *   - Bulk Enrich calls apolloApi.enrich on un-enriched selected ids and
+ *     marks them in enrichedIds + enrichmentData.
+ *   - Bulk Import enables only when selectedIds ∩ enrichedIds is non-empty —
+ *     David's "must enrich before import" rule. Per-contact Import buttons
+ *     intentionally absent.
  */
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { apolloApi } from "@/lib/api";
@@ -63,6 +64,21 @@ export default function ColleaguesPanel({
     new Map()
   );
 
+  const [enriching, setEnriching] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // ────────────────────────────────────────────────── derived counts
+  const selectedCount = selectedIds.size;
+  const selectedAndEnrichedCount = useMemo(() => {
+    let n = 0;
+    selectedIds.forEach((id) => {
+      if (enrichedIds.has(id)) n += 1;
+    });
+    return n;
+  }, [selectedIds, enrichedIds]);
+
+  // ────────────────────────────────────────────────── handlers
   async function ensureLoaded() {
     if (colleagues !== null || loading) return;
     setLoading(true);
@@ -100,14 +116,79 @@ export default function ColleaguesPanel({
     });
   }
 
-  // onImportComplete + apolloApi imports stay because §3 will use them.
-  // Suppress the unused warning for now via an underscore-discard pattern.
-  void onImportComplete;
-  void enrichedIds;
-  void enrichmentData;
-  void setEnrichedIds;
-  void setEnrichmentData;
+  async function handleBulkEnrich() {
+    // Already-enriched ids are filtered out client-side — do not waste credits.
+    const idsToEnrich: string[] = [];
+    selectedIds.forEach((id) => {
+      if (!enrichedIds.has(id)) idsToEnrich.push(id);
+    });
+    if (idsToEnrich.length === 0) return;
 
+    setEnriching(true);
+    setError(null);
+    try {
+      const data = (await apolloApi.enrich(idsToEnrich)) as {
+        enriched?: Colleague[];
+      };
+      const list = data.enriched ?? [];
+      setEnrichmentData((prev) => {
+        const next = new Map(prev);
+        list.forEach((p) => next.set(p.apollo_id, p));
+        return next;
+      });
+      setEnrichedIds((prev) => {
+        const next = new Set(prev);
+        list.forEach((p) => next.add(p.apollo_id));
+        return next;
+      });
+      const n = list.length;
+      setToast(
+        `${n} ${n === 1 ? "contact" : "contacts"} enriched · ${n} ${n === 1 ? "credit" : "credits"} used`
+      );
+      window.setTimeout(() => setToast(null), 4000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Enrichment failed");
+    } finally {
+      setEnriching(false);
+    }
+  }
+
+  async function handleBulkImport() {
+    if (!colleagues || selectedAndEnrichedCount === 0) return;
+
+    // Build the people payload from enriched data merged onto the original row.
+    const payload = colleagues
+      .filter(
+        (c) => selectedIds.has(c.apollo_id) && enrichedIds.has(c.apollo_id)
+      )
+      .map((c) => {
+        const enrichedFields = enrichmentData.get(c.apollo_id) ?? {};
+        return { ...c, ...enrichedFields } as unknown as Record<string, unknown>;
+      });
+    if (payload.length === 0) return;
+
+    setImporting(true);
+    setError(null);
+    try {
+      const report = (await apolloApi.import(payload)) as {
+        created?: number;
+        updated?: number;
+        skipped?: number;
+      };
+      onImportComplete({
+        added: report.created ?? 0,
+        updated: report.updated ?? 0,
+        skipped: report.skipped ?? 0,
+        creditsUsed: 0, // already enriched — import itself does not bill credits
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // ────────────────────────────────────────────────── render
   return (
     <div className="space-y-3">
       <button
@@ -136,38 +217,57 @@ export default function ColleaguesPanel({
                 Loading contacts…
               </p>
             )}
-            {error && <p className="text-xs text-red-600">{error}</p>}
+            {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
             {!loading && !error && colleagues && colleagues.length === 0 && (
               <p className="text-sm text-slate-400 text-center py-4">
                 No public contacts found at this company.
               </p>
             )}
             {!loading && colleagues && colleagues.length > 0 && (
-              <ul className="space-y-2">
-                {colleagues.map((c) => {
-                  const selected = selectedIds.has(c.apollo_id);
-                  const enriched = enrichedIds.has(c.apollo_id);
-                  const merged = enriched
-                    ? { ...c, ...(enrichmentData.get(c.apollo_id) ?? {}) }
-                    : c;
-                  return (
-                    <ColleagueRow
-                      key={c.apollo_id}
-                      colleague={merged}
-                      selected={selected}
-                      enriched={enriched}
-                      onToggle={() => toggleSelect(c.apollo_id)}
-                    />
-                  );
-                })}
-              </ul>
+              <>
+                <ul className="space-y-2">
+                  {colleagues.map((c) => {
+                    const selected = selectedIds.has(c.apollo_id);
+                    const enriched = enrichedIds.has(c.apollo_id);
+                    const merged = enriched
+                      ? { ...c, ...(enrichmentData.get(c.apollo_id) ?? {}) }
+                      : c;
+                    return (
+                      <ColleagueRow
+                        key={c.apollo_id}
+                        colleague={merged}
+                        selected={selected}
+                        enriched={enriched}
+                        onToggle={() => toggleSelect(c.apollo_id)}
+                      />
+                    );
+                  })}
+                </ul>
+
+                <BulkActionsBar
+                  selectedCount={selectedCount}
+                  selectedAndEnrichedCount={selectedAndEnrichedCount}
+                  enriching={enriching}
+                  importing={importing}
+                  onEnrich={handleBulkEnrich}
+                  onImport={handleBulkImport}
+                />
+              </>
             )}
           </CardContent>
         </Card>
       )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 rounded-xl bg-emerald-600 text-white px-4 py-3 text-sm shadow-lg z-50">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
+
+// ────────────────────────────────────────────────── ColleagueRow
 
 function ColleagueRow({
   colleague,
@@ -247,5 +347,65 @@ function ColleagueRow({
         </span>
       )}
     </li>
+  );
+}
+
+// ────────────────────────────────────────────────── BulkActionsBar
+
+function BulkActionsBar({
+  selectedCount,
+  selectedAndEnrichedCount,
+  enriching,
+  importing,
+  onEnrich,
+  onImport,
+}: {
+  selectedCount: number;
+  selectedAndEnrichedCount: number;
+  enriching: boolean;
+  importing: boolean;
+  onEnrich: () => void;
+  onImport: () => void;
+}) {
+  const enrichDisabled = selectedCount === 0 || enriching;
+  const importDisabled = selectedAndEnrichedCount === 0 || importing;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={onEnrich}
+        disabled={enrichDisabled}
+      >
+        {enriching ? (
+          <>Enriching…</>
+        ) : (
+          <>
+            <span aria-hidden className="mr-1">
+              ⚡
+            </span>
+            Enrich selected ({selectedCount})
+          </>
+        )}
+      </Button>
+      <Button
+        type="button"
+        onClick={onImport}
+        disabled={importDisabled}
+        className="bg-blue-600 hover:bg-blue-700 text-white"
+      >
+        {importing ? (
+          <>Importing…</>
+        ) : (
+          <>
+            <span aria-hidden className="mr-1">
+              →
+            </span>
+            Import ({selectedAndEnrichedCount})
+          </>
+        )}
+      </Button>
+    </div>
   );
 }
