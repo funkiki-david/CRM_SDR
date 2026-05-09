@@ -345,6 +345,45 @@ export const apolloApi = {
 };
 
 /**
+ * Finder API — Spec A backend (commit 49fb399, deployed 2026-05-06).
+ * Three thin endpoints powering the new 3-tab Finder Page.
+ */
+export const finderApi = {
+  /** Tab 3 fallback: Apollo 0 results → Claude web_search returns
+   *  structured candidates [{ company_name, domain, summary }]. */
+  webSearch: (query: string): Promise<{
+    candidates: Array<{ company_name: string; domain: string; summary: string }>;
+  }> =>
+    request("/api/finder/web-search", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    }),
+
+  /** Tab 2 main: precise person lookup by email.
+   *  Returns { found: true, person } or { found: false }. No web fallback —
+   *  precision over recall (per Spec A DIAG decision). */
+  lookupByEmail: (email: string): Promise<{
+    found: boolean;
+    person?: Record<string, unknown>;
+  }> =>
+    request("/api/finder/lookup-by-email", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  /** Tab 1 main: precise org lookup by domain.
+   *  Backend already strips https:// and path → bare domain. */
+  lookupByDomain: (domain: string): Promise<{
+    found: boolean;
+    organization?: Record<string, unknown>;
+  }> =>
+    request("/api/finder/lookup-by-domain", {
+      method: "POST",
+      body: JSON.stringify({ domain }),
+    }),
+};
+
+/**
  * System Settings API
  */
 export const settingsApi = {
