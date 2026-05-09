@@ -1,18 +1,14 @@
 /**
  * Tab 3 — Browse Companies.
  *
- * Lifted from the pre-Spec-B page.tsx with these changes (Spec B §1 / §5.3):
- *   - Field count reduced from 7 → 4: companyName, companyWebsite,
- *     companyEmail, linkedinUrl. Removed: keywords, city, personName,
- *     "More filters" expander.
- *   - State 50-pill multi-select kept (re-implemented compactly).
- *   - AI Keyword Finder block kept in DOM but disabled with a "Coming soon"
- *     badge — code stays per §9.5, just doesn't fire.
- *   - Search button copy:
- *         disabled → "Fill at least one field to enable search"
- *         enabled  → "Ready to search"
+ * Spec B §5.3 base + PATCH-1 §2 (AI Keyword Finder removed from DOM):
+ *   - 4 primary fields: companyName, companyWebsite, companyEmail, linkedinUrl
+ *   - 50-state multi-select pill row
  *   - Apollo → Claude web_search silent fallback. NO banner / badge / toast
  *     about the source (Spec B §5.3 + §9.9 + §9.10).
+ *
+ * AI Keyword Finder was removed in 2026-05-09 (PATCH-1 §2). When unfrozen,
+ * it will be reimplemented fresh — no groundwork preserved.
  */
 "use client";
 
@@ -71,10 +67,6 @@ export default function BrowseCompaniesTab({ onImportComplete }: Props) {
   const [companyEmail, setCompanyEmail] = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [selectedStates, setSelectedStates] = useState<Set<string>>(new Set());
-
-  // ─── AI Keyword Finder (paused — kept for future restore per §9.5) ───
-  // States declared but UI is disabled, so they never change at runtime.
-  const [aiInput] = useState("");
 
   // ─── Search / results / selection ───
   const [searching, setSearching] = useState(false);
@@ -282,8 +274,6 @@ export default function BrowseCompaniesTab({ onImportComplete }: Props) {
         onSearch={handleSearch}
       />
 
-      <AIKeywordFinderDisabled value={aiInput} />
-
       {searchError && (
         <Card>
           <CardContent className="py-3 text-sm text-red-600">
@@ -473,46 +463,6 @@ function FieldRow({
         className="h-10 text-sm"
       />
     </div>
-  );
-}
-
-// ───────────────────────────────────────── AI Keyword Finder (paused)
-
-function AIKeywordFinderDisabled({ value }: { value: string }) {
-  return (
-    <Card className="opacity-60 relative">
-      <span className="absolute top-3 right-3 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200">
-        Coming soon
-      </span>
-      <CardContent className="p-6">
-        <div className="flex items-start gap-3">
-          <span className="text-2xl leading-none" aria-hidden>
-            ✨
-          </span>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-base font-semibold text-slate-900">
-              AI Keyword Finder
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Describe the kind of company you&apos;re after and we&apos;ll
-              suggest Apollo industries + keywords. Currently paused while we
-              tune the rules.
-            </p>
-            <div className="flex gap-2 mt-3">
-              <Input
-                value={value}
-                disabled
-                placeholder="e.g. printing companies in California"
-                className="flex-1 h-10 text-sm"
-              />
-              <Button disabled className="h-10 px-5">
-                Generate
-              </Button>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
