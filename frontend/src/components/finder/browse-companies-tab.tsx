@@ -340,6 +340,13 @@ function PrimarySearchCard({
   searching: boolean;
   onSearch: () => void;
 }) {
+  // Enter from any input inside the <form> → submit if enabled, no-op if not.
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!hasAnyInput || searching) return;
+    onSearch();
+  };
+
   return (
     <Card>
       <CardContent className="p-6 space-y-5">
@@ -358,85 +365,90 @@ function PrimarySearchCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FieldRow
-            label="Company name"
-            value={companyName}
-            onChange={onCompanyName}
-            placeholder="e.g. Burton Snowboards"
-          />
-          <FieldRow
-            label="Company website"
-            value={companyWebsite}
-            onChange={onCompanyWebsite}
-            placeholder="e.g. burton.com"
-          />
-          <FieldRow
-            label="Company email"
-            value={companyEmail}
-            onChange={onCompanyEmail}
-            placeholder="e.g. info@burton.com"
-          />
-          <FieldRow
-            label="LinkedIn URL"
-            value={linkedinUrl}
-            onChange={onLinkedinUrl}
-            placeholder="e.g. linkedin.com/company/burton-snowboards"
-          />
-        </div>
-
-        <div>
-          <Label className="text-xs text-slate-500 mb-2 block">
-            State (multi-select)
-          </Label>
-          <div className="flex flex-wrap gap-1.5">
-            {US_STATES.map((s) => {
-              const active = selectedStates.has(s);
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => onToggleState(s)}
-                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                    active
-                      ? "bg-slate-900 text-white border-slate-900"
-                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-                  }`}
-                >
-                  {s}
-                </button>
-              );
-            })}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FieldRow
+              label="Company name"
+              value={companyName}
+              onChange={onCompanyName}
+              placeholder="e.g. Burton Snowboards"
+            />
+            <FieldRow
+              label="Company website"
+              value={companyWebsite}
+              onChange={onCompanyWebsite}
+              placeholder="e.g. burton.com"
+            />
+            <FieldRow
+              label="Company email"
+              value={companyEmail}
+              onChange={onCompanyEmail}
+              placeholder="e.g. info@burton.com"
+            />
+            <FieldRow
+              label="LinkedIn URL"
+              value={linkedinUrl}
+              onChange={onLinkedinUrl}
+              placeholder="e.g. linkedin.com/company/burton-snowboards"
+            />
           </div>
-          {selectedStates.size > 0 && (
-            <p className="text-xs text-slate-400 mt-2">
-              {selectedStates.size} state{selectedStates.size === 1 ? "" : "s"}{" "}
-              selected
-            </p>
-          )}
-        </div>
 
-        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={onClearAll}
-            disabled={!hasAnyInput && selectedStates.size === 0}
-            className="text-xs text-slate-500 hover:text-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed"
-          >
-            Clear all
-          </button>
-          <Button
-            onClick={onSearch}
-            disabled={!hasAnyInput || searching}
-            className="h-11 px-7 bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {searching
-              ? "Searching…"
-              : hasAnyInput
-                ? "Search · Ready to search"
-                : "Fill at least one field to enable search"}
-          </Button>
-        </div>
+          <div>
+            <Label className="text-xs text-slate-500 mb-2 block">
+              State (multi-select)
+            </Label>
+            <div className="flex flex-wrap gap-1.5">
+              {US_STATES.map((s) => {
+                const active = selectedStates.has(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => onToggleState(s)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      active
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedStates.size > 0 && (
+              <p className="text-xs text-slate-400 mt-2">
+                {selectedStates.size} state{selectedStates.size === 1 ? "" : "s"}{" "}
+                selected
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClearAll}
+              disabled={!hasAnyInput && selectedStates.size === 0}
+              className="text-xs text-slate-500 hover:text-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed"
+            >
+              Clear all
+            </button>
+            <Button
+              type="submit"
+              disabled={!hasAnyInput || searching}
+              className="h-11 px-7 bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <span aria-hidden className="mr-1.5">
+                🔍
+              </span>
+              {searching
+                ? "Searching…"
+                : hasAnyInput
+                  ? "Search Now"
+                  : "Fill at least one field to enable search"}
+            </Button>
+          </div>
+        </form>
       </CardContent>
     </Card>
   );
