@@ -1,18 +1,729 @@
+/**
+ * Tab 3 — Browse Companies.
+ *
+ * Lifted from the pre-Spec-B page.tsx with these changes (Spec B §1 / §5.3):
+ *   - Field count reduced from 7 → 4: companyName, companyWebsite,
+ *     companyEmail, linkedinUrl. Removed: keywords, city, personName,
+ *     "More filters" expander.
+ *   - State 50-pill multi-select kept (re-implemented compactly).
+ *   - AI Keyword Finder block kept in DOM but disabled with a "Coming soon"
+ *     badge — code stays per §9.5, just doesn't fire.
+ *   - Search button copy:
+ *         disabled → "Fill at least one field to enable search"
+ *         enabled  → "Ready to search"
+ *   - Apollo → Claude web_search silent fallback. NO banner / badge / toast
+ *     about the source (Spec B §5.3 + §9.9 + §9.10).
+ */
 "use client";
 
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { apolloApi, finderApi } from "@/lib/api";
 import type { ImportStats } from "./shared/import-result-modal";
 
 interface Props {
   onImportComplete: (stats: ImportStats) => void;
 }
 
-// Placeholder — Browse Companies logic lifted from old page.tsx in Step 5.
-// Old logic temporarily unavailable on this branch between Steps 2-4 (by design,
-// per Spec B §7.1) — git history preserves it on `main` until merge.
-export default function BrowseCompaniesTab(_: Props) {
+interface SearchResult {
+  apollo_id: string;
+  first_name?: string;
+  last_name?: string;
+  name?: string;
+  email?: string | null;
+  title?: string | null;
+  phone?: string | null;
+  linkedin_url?: string | null;
+  company_name?: string | null;
+  company_domain?: string | null;
+  industry?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  is_existing?: boolean;
+  /** Set when the row came from the silent web_search fallback. UI never
+   *  surfaces this — only used internally to gate Enrich/Import (no apollo_id
+   *  on web results). */
+  _isWeb?: boolean;
+  _summary?: string;
+}
+
+const US_STATES = [
+  "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+  "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
+  "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine",
+  "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi",
+  "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey",
+  "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio",
+  "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina",
+  "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia",
+  "Washington", "West Virginia", "Wisconsin", "Wyoming",
+];
+
+export default function BrowseCompaniesTab({ onImportComplete }: Props) {
+  // ─── Primary search fields (4) ───
+  const [companyName, setCompanyName] = useState("");
+  const [companyWebsite, setCompanyWebsite] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [selectedStates, setSelectedStates] = useState<Set<string>>(new Set());
+
+  // ─── AI Keyword Finder (paused — kept for future restore per §9.5) ───
+  // States declared but UI is disabled, so they never change at runtime.
+  const [aiInput] = useState("");
+
+  // ─── Search / results / selection ───
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [hasSearched, setHasSearched] = useState(false);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [enrichedIds, setEnrichedIds] = useState<Set<string>>(new Set());
+  const [enriching, setEnriching] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const hasAnyInput =
+    Boolean(
+      companyName.trim() ||
+        companyWebsite.trim() ||
+        companyEmail.trim() ||
+        linkedinUrl.trim()
+    ) || selectedStates.size > 0;
+
+  function toggleState(state: string) {
+    setSelectedStates((prev) => {
+      const next = new Set(prev);
+      if (next.has(state)) next.delete(state);
+      else next.add(state);
+      return next;
+    });
+  }
+
+  function clearAll() {
+    setCompanyName("");
+    setCompanyWebsite("");
+    setCompanyEmail("");
+    setLinkedinUrl("");
+    setSelectedStates(new Set());
+  }
+
+  async function handleSearch() {
+    if (!hasAnyInput || searching) return;
+    setSearching(true);
+    setSearchError("");
+    setHasSearched(true);
+    setSelected(new Set());
+    setEnrichedIds(new Set());
+
+    const filters: Record<string, unknown> = { page: 1, per_page: 25 };
+    if (companyName.trim()) filters.q_organization_name = companyName.trim();
+    if (companyWebsite.trim()) filters.company_domain = companyWebsite.trim();
+
+    // Apollo's free-text q_keywords carries email + linkedin context.
+    const freeTextParts = [
+      companyEmail.trim(),
+      linkedinUrl.trim(),
+    ].filter(Boolean);
+    if (freeTextParts.length > 0) {
+      filters.q_keywords = freeTextParts.join(" ");
+    }
+
+    if (selectedStates.size > 0) {
+      filters.person_locations = Array.from(selectedStates).map(
+        (s) => `${s}, US`
+      );
+    }
+
+    try {
+      const data = (await apolloApi.search(filters)) as {
+        people?: SearchResult[];
+        total?: number;
+      };
+      const apolloPeople = data.people || [];
+      if (apolloPeople.length > 0) {
+        setResults(apolloPeople);
+      } else {
+        // Silent fallback — no banner, no badge, no message.
+        const query = buildQueryFromFilters(
+          companyName,
+          companyWebsite,
+          companyEmail,
+          linkedinUrl,
+          selectedStates
+        );
+        if (query) {
+          const web = await finderApi.webSearch(query);
+          setResults(
+            web.candidates.map((c) => normalizeWebToResult(c))
+          );
+        } else {
+          setResults([]);
+        }
+      }
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : "Search failed");
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkEnrich() {
+    // Only enrich rows with a real Apollo id (web rows have synthetic ids).
+    const ids = results
+      .filter(
+        (r) =>
+          selected.has(r.apollo_id) &&
+          !r._isWeb &&
+          !enrichedIds.has(r.apollo_id)
+      )
+      .map((r) => r.apollo_id);
+    if (ids.length === 0) return;
+
+    setEnriching(true);
+    setSearchError("");
+    try {
+      const data = (await apolloApi.enrich(ids)) as {
+        enriched?: SearchResult[];
+      };
+      const enriched = data.enriched || [];
+      setResults((prev) =>
+        prev.map((r) => {
+          const match = enriched.find((e) => e.apollo_id === r.apollo_id);
+          return match ? { ...r, ...match } : r;
+        })
+      );
+      setEnrichedIds((prev) => {
+        const next = new Set(prev);
+        enriched.forEach((e) => next.add(e.apollo_id));
+        return next;
+      });
+      const n = enriched.length;
+      setToast(`${n} ${n === 1 ? "contact" : "contacts"} enriched · ${n} ${n === 1 ? "credit" : "credits"} used`);
+      window.setTimeout(() => setToast(null), 4000);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : "Enrichment failed");
+    } finally {
+      setEnriching(false);
+    }
+  }
+
+  async function handleBulkImport() {
+    const toImport = results.filter(
+      (r) => selected.has(r.apollo_id) && !r._isWeb
+    );
+    if (toImport.length === 0) return;
+
+    setImporting(true);
+    setSearchError("");
+    try {
+      const report = (await apolloApi.import(
+        toImport.map((r) => r as unknown as Record<string, unknown>)
+      )) as { created?: number; updated?: number; skipped?: number };
+      onImportComplete({
+        added: report.created ?? 0,
+        updated: report.updated ?? 0,
+        skipped: report.skipped ?? 0,
+        creditsUsed: 0,
+      });
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  const selectableCount = useMemo(
+    () =>
+      results.filter((r) => selected.has(r.apollo_id) && !r._isWeb).length,
+    [results, selected]
+  );
+  const enrichableCount = useMemo(
+    () =>
+      results.filter(
+        (r) =>
+          selected.has(r.apollo_id) &&
+          !r._isWeb &&
+          !enrichedIds.has(r.apollo_id)
+      ).length,
+    [results, selected, enrichedIds]
+  );
+
   return (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center text-slate-400 text-sm">
-      Browse Companies tab — implementation coming in Step 5 (lifted from old page.tsx)
+    <div className="space-y-6">
+      <PrimarySearchCard
+        companyName={companyName}
+        companyWebsite={companyWebsite}
+        companyEmail={companyEmail}
+        linkedinUrl={linkedinUrl}
+        selectedStates={selectedStates}
+        onCompanyName={setCompanyName}
+        onCompanyWebsite={setCompanyWebsite}
+        onCompanyEmail={setCompanyEmail}
+        onLinkedinUrl={setLinkedinUrl}
+        onToggleState={toggleState}
+        onClearAll={clearAll}
+        hasAnyInput={hasAnyInput}
+        searching={searching}
+        onSearch={handleSearch}
+      />
+
+      <AIKeywordFinderDisabled value={aiInput} />
+
+      {searchError && (
+        <Card>
+          <CardContent className="py-3 text-sm text-red-600">
+            {searchError}
+          </CardContent>
+        </Card>
+      )}
+
+      {hasSearched && (
+        <ResultsBlock
+          results={results}
+          selected={selected}
+          enrichedIds={enrichedIds}
+          searching={searching}
+          enriching={enriching}
+          importing={importing}
+          selectableCount={selectableCount}
+          enrichableCount={enrichableCount}
+          onToggleSelect={toggleSelect}
+          onBulkEnrich={handleBulkEnrich}
+          onBulkImport={handleBulkImport}
+        />
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 rounded-xl bg-emerald-600 text-white px-4 py-3 text-sm shadow-lg z-50">
+          {toast}
+        </div>
+      )}
     </div>
   );
+}
+
+// ───────────────────────────────────────── Primary search card
+
+function PrimarySearchCard({
+  companyName,
+  companyWebsite,
+  companyEmail,
+  linkedinUrl,
+  selectedStates,
+  onCompanyName,
+  onCompanyWebsite,
+  onCompanyEmail,
+  onLinkedinUrl,
+  onToggleState,
+  onClearAll,
+  hasAnyInput,
+  searching,
+  onSearch,
+}: {
+  companyName: string;
+  companyWebsite: string;
+  companyEmail: string;
+  linkedinUrl: string;
+  selectedStates: Set<string>;
+  onCompanyName: (v: string) => void;
+  onCompanyWebsite: (v: string) => void;
+  onCompanyEmail: (v: string) => void;
+  onLinkedinUrl: (v: string) => void;
+  onToggleState: (s: string) => void;
+  onClearAll: () => void;
+  hasAnyInput: boolean;
+  searching: boolean;
+  onSearch: () => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-6 space-y-5">
+        <div className="flex items-start gap-3">
+          <span className="text-3xl leading-none" aria-hidden>
+            🔍
+          </span>
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">
+              Browse companies
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Discover new companies from scratch. Combine fields to narrow
+              the field. Bulk enrich and import in one go.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FieldRow
+            label="Company name"
+            value={companyName}
+            onChange={onCompanyName}
+            placeholder="e.g. Burton Snowboards"
+          />
+          <FieldRow
+            label="Company website"
+            value={companyWebsite}
+            onChange={onCompanyWebsite}
+            placeholder="e.g. burton.com"
+          />
+          <FieldRow
+            label="Company email"
+            value={companyEmail}
+            onChange={onCompanyEmail}
+            placeholder="e.g. info@burton.com"
+          />
+          <FieldRow
+            label="LinkedIn URL"
+            value={linkedinUrl}
+            onChange={onLinkedinUrl}
+            placeholder="e.g. linkedin.com/company/burton-snowboards"
+          />
+        </div>
+
+        <div>
+          <Label className="text-xs text-slate-500 mb-2 block">
+            State (multi-select)
+          </Label>
+          <div className="flex flex-wrap gap-1.5">
+            {US_STATES.map((s) => {
+              const active = selectedStates.has(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onToggleState(s)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    active
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+          {selectedStates.size > 0 && (
+            <p className="text-xs text-slate-400 mt-2">
+              {selectedStates.size} state{selectedStates.size === 1 ? "" : "s"}{" "}
+              selected
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={onClearAll}
+            disabled={!hasAnyInput && selectedStates.size === 0}
+            className="text-xs text-slate-500 hover:text-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed"
+          >
+            Clear all
+          </button>
+          <Button
+            onClick={onSearch}
+            disabled={!hasAnyInput || searching}
+            className="h-11 px-7 bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {searching
+              ? "Searching…"
+              : hasAnyInput
+                ? "Search · Ready to search"
+                : "Fill at least one field to enable search"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FieldRow({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <Label className="text-xs text-slate-500 mb-1 block">{label}</Label>
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-10 text-sm"
+      />
+    </div>
+  );
+}
+
+// ───────────────────────────────────────── AI Keyword Finder (paused)
+
+function AIKeywordFinderDisabled({ value }: { value: string }) {
+  return (
+    <Card className="opacity-60 relative">
+      <span className="absolute top-3 right-3 text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200">
+        Coming soon
+      </span>
+      <CardContent className="p-6">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl leading-none" aria-hidden>
+            ✨
+          </span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-semibold text-slate-900">
+              AI Keyword Finder
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Describe the kind of company you&apos;re after and we&apos;ll
+              suggest Apollo industries + keywords. Currently paused while we
+              tune the rules.
+            </p>
+            <div className="flex gap-2 mt-3">
+              <Input
+                value={value}
+                disabled
+                placeholder="e.g. printing companies in California"
+                className="flex-1 h-10 text-sm"
+              />
+              <Button disabled className="h-10 px-5">
+                Generate
+              </Button>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ───────────────────────────────────────── Results block
+
+function ResultsBlock({
+  results,
+  selected,
+  enrichedIds,
+  searching,
+  enriching,
+  importing,
+  selectableCount,
+  enrichableCount,
+  onToggleSelect,
+  onBulkEnrich,
+  onBulkImport,
+}: {
+  results: SearchResult[];
+  selected: Set<string>;
+  enrichedIds: Set<string>;
+  searching: boolean;
+  enriching: boolean;
+  importing: boolean;
+  selectableCount: number;
+  enrichableCount: number;
+  onToggleSelect: (id: string) => void;
+  onBulkEnrich: () => void;
+  onBulkImport: () => void;
+}) {
+  if (searching) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-slate-400">
+          Searching…
+        </CardContent>
+      </Card>
+    );
+  }
+  if (results.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-10 text-center">
+          <div className="text-2xl mb-2" aria-hidden>
+            🔍
+          </div>
+          <p className="text-sm font-medium text-slate-900">No results</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Try broadening your filters or removing a state.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-slate-500">
+          {results.length} result{results.length === 1 ? "" : "s"}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={onBulkEnrich}
+            disabled={enrichableCount === 0 || enriching}
+          >
+            {enriching ? "Enriching…" : `Bulk Enrich (${enrichableCount})`}
+          </Button>
+          <Button
+            onClick={onBulkImport}
+            disabled={selectableCount === 0 || importing}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {importing
+              ? "Importing…"
+              : `Import to CRM (${selectableCount})`}
+          </Button>
+        </div>
+      </div>
+
+      <ul className="space-y-2">
+        {results.map((r) => (
+          <ResultRow
+            key={r.apollo_id}
+            row={r}
+            selected={selected.has(r.apollo_id)}
+            enriched={enrichedIds.has(r.apollo_id)}
+            onToggle={() => onToggleSelect(r.apollo_id)}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ResultRow({
+  row,
+  selected,
+  enriched,
+  onToggle,
+}: {
+  row: SearchResult;
+  selected: boolean;
+  enriched: boolean;
+  onToggle: () => void;
+}) {
+  const fullName =
+    row.name ||
+    [row.first_name, row.last_name].filter(Boolean).join(" ") ||
+    null;
+  const company = row.company_name || row.company_domain || null;
+  const location = [row.city, row.state, row.country]
+    .filter(Boolean)
+    .join(", ");
+  return (
+    <li>
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggle}
+              disabled={row._isWeb}
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-30"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-semibold text-slate-900 truncate">
+                  {company || fullName || row.company_domain || "—"}
+                </h3>
+                {enriched && (
+                  <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100 text-[10px]">
+                    enriched
+                  </Badge>
+                )}
+                {row.is_existing && (
+                  <Badge variant="outline" className="text-[10px]">
+                    in CRM
+                  </Badge>
+                )}
+              </div>
+              {fullName && (
+                <p className="text-xs text-slate-500 mt-0.5 truncate">
+                  {fullName}
+                  {row.title && (
+                    <>
+                      {" · "}
+                      <span className="text-slate-700">{row.title}</span>
+                    </>
+                  )}
+                </p>
+              )}
+              {row._summary && (
+                <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                  {row._summary}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-2 text-[11px] text-slate-500">
+                {row.email && <span className="font-mono">{row.email}</span>}
+                {row.industry && <span>{row.industry}</span>}
+                {location && <span>{location}</span>}
+                {row.linkedin_url && (
+                  <a
+                    href={row.linkedin_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    LinkedIn ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </li>
+  );
+}
+
+// ───────────────────────────────────────── helpers
+
+function buildQueryFromFilters(
+  companyName: string,
+  companyWebsite: string,
+  companyEmail: string,
+  linkedinUrl: string,
+  selectedStates: Set<string>
+): string {
+  const parts = [
+    companyName.trim(),
+    companyWebsite.trim(),
+    companyEmail.trim(),
+    linkedinUrl.trim(),
+    ...Array.from(selectedStates),
+  ].filter(Boolean);
+  return parts.join(" ");
+}
+
+function normalizeWebToResult(c: {
+  company_name: string;
+  domain: string;
+  summary: string;
+}): SearchResult {
+  return {
+    apollo_id: `web-${c.domain}`,
+    company_name: c.company_name,
+    company_domain: c.domain,
+    _isWeb: true,
+    _summary: c.summary,
+  };
 }
