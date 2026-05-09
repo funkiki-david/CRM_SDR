@@ -18,8 +18,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { apolloApi, finderApi } from "@/lib/api";
+import { finderApi } from "@/lib/api";
 import type { ImportStats } from "./shared/import-result-modal";
+import ColleaguesPanel from "./shared/colleagues-panel";
 
 interface Props {
   onImportComplete: (stats: ImportStats) => void;
@@ -40,16 +41,6 @@ interface Organization {
   logo_url?: string;
 }
 
-interface Colleague {
-  apollo_id: string;
-  first_name?: string;
-  last_name?: string;
-  name?: string;
-  title?: string | null;
-  email?: string | null;
-  linkedin_url?: string | null;
-}
-
 type LookupResult =
   | { state: "idle" }
   | { state: "loading" }
@@ -68,8 +59,6 @@ export default function FindByWebsiteTab({ onImportComplete }: Props) {
     setResult({ state: "loading" });
     try {
       const data = await finderApi.lookupByDomain(raw);
-      // Backend returns the cleaned domain back via organization.primary_domain;
-      // fall back to raw input for the colleagues panel header.
       const queriedDomain =
         (data.organization as Organization | undefined)?.primary_domain ??
         cleanDomain(raw);
@@ -109,6 +98,7 @@ export default function FindByWebsiteTab({ onImportComplete }: Props) {
           <CompanyCard org={result.org} />
           <ColleaguesPanel
             domain={result.queriedDomain}
+            label="Show key contacts at"
             onImportComplete={onImportComplete}
           />
         </>
@@ -276,153 +266,6 @@ function Field({ label, value }: { label: string; value: string }) {
       <span className="text-slate-400">{label}:</span>{" "}
       <span className="text-slate-700">{value}</span>
     </span>
-  );
-}
-
-// =============================================================== Colleagues
-
-function ColleaguesPanel({
-  domain,
-  onImportComplete,
-}: {
-  domain: string;
-  onImportComplete: (stats: ImportStats) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [colleagues, setColleagues] = useState<Colleague[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [importingId, setImportingId] = useState<string | null>(null);
-
-  async function ensureLoaded() {
-    if (colleagues !== null || loading) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apolloApi.search({
-        organization_domains: [domain],
-        per_page: 10,
-        page: 1,
-      });
-      setColleagues(((data.people as Colleague[]) || []).slice(0, 10));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load contacts");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleToggle() {
-    const next = !open;
-    setOpen(next);
-    if (next) await ensureLoaded();
-  }
-
-  async function importOne(c: Colleague) {
-    setImportingId(c.apollo_id);
-    try {
-      const report = (await apolloApi.import([c as unknown as Record<string, unknown>])) as {
-        created?: number;
-        updated?: number;
-        skipped?: number;
-      };
-      onImportComplete({
-        added: report.created ?? 0,
-        updated: report.updated ?? 0,
-        skipped: report.skipped ?? 0,
-        creditsUsed: 0,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
-    } finally {
-      setImportingId(null);
-    }
-  }
-
-  return (
-    <Card>
-      <CardContent className="p-0">
-        <button
-          type="button"
-          onClick={handleToggle}
-          className="w-full flex items-center justify-between px-5 py-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <span>
-            {open ? "Hide" : "Show"} key contacts at{" "}
-            <span className="font-mono text-slate-900">{domain}</span>
-          </span>
-          <span className="text-slate-400 text-xs">{open ? "▲" : "▼"}</span>
-        </button>
-
-        {open && (
-          <div className="border-t border-slate-100 px-5 py-4">
-            {loading && (
-              <p className="text-sm text-slate-400 text-center py-4">
-                Loading contacts…
-              </p>
-            )}
-            {error && <p className="text-xs text-red-600">{error}</p>}
-            {!loading && !error && colleagues && colleagues.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-4">
-                No public contacts found at this company.
-              </p>
-            )}
-            {!loading && colleagues && colleagues.length > 0 && (
-              <ul className="space-y-2">
-                {colleagues.map((c) => (
-                  <ColleagueRow
-                    key={c.apollo_id}
-                    colleague={c}
-                    importing={importingId === c.apollo_id}
-                    onImport={() => importOne(c)}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ColleagueRow({
-  colleague,
-  importing,
-  onImport,
-}: {
-  colleague: Colleague;
-  importing: boolean;
-  onImport: () => void;
-}) {
-  const fullName =
-    colleague.name ||
-    [colleague.first_name, colleague.last_name].filter(Boolean).join(" ") ||
-    "Unknown";
-  return (
-    <li className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-900 truncate">{fullName}</p>
-        <p className="text-xs text-slate-500 truncate">
-          {colleague.title || "—"}
-          {colleague.email && (
-            <>
-              {" · "}
-              <span className="font-mono">{colleague.email}</span>
-            </>
-          )}
-        </p>
-      </div>
-      <Button
-        onClick={onImport}
-        disabled={importing}
-        size="sm"
-        variant="outline"
-        className="shrink-0"
-      >
-        {importing ? "…" : "Import"}
-      </Button>
-    </li>
   );
 }
 
