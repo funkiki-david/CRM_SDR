@@ -101,13 +101,16 @@ export default function ColleaguesPanel({
         <button
           type="button"
           onClick={handleToggle}
-          className="w-full flex items-center justify-between px-5 py-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="w-full flex items-center px-5 py-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
         >
+          <span
+            className="inline-block w-2 h-2 rounded-full bg-blue-600 mr-2 shrink-0"
+            aria-hidden
+          />
           <span>
             {headerLabel}{" "}
             <span className="font-mono text-slate-900">{domain}</span>
           </span>
-          <span className="text-slate-400 text-xs">{open ? "▲" : "▼"}</span>
         </button>
 
         {open && (
