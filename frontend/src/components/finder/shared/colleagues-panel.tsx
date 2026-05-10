@@ -21,7 +21,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { apolloApi } from "@/lib/api";
@@ -190,25 +189,40 @@ export default function ColleaguesPanel({
   }
 
   // ────────────────────────────────────────────────── render
+  const hasResults = !loading && colleagues !== null && colleagues.length > 0;
+
   return (
     <div className="space-y-3">
-      <button
-        type="button"
-        onClick={handleToggle}
-        className="inline-flex items-center gap-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2.5 transition-colors whitespace-nowrap max-w-full"
-      >
-        <span aria-hidden className="text-base leading-none">
-          {open ? "×" : "+"}
-        </span>
-        {open ? (
-          <span>Hide contacts</span>
-        ) : (
-          <span className="truncate">
-            Find more contacts at{" "}
-            <span className="font-mono">{domain}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="inline-flex items-center gap-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2.5 transition-colors whitespace-nowrap max-w-full"
+        >
+          <span aria-hidden className="text-base leading-none">
+            {open ? "×" : "+"}
           </span>
+          {open ? (
+            <span>Hide contacts</span>
+          ) : (
+            <span className="truncate">
+              Find more contacts at{" "}
+              <span className="font-mono">{domain}</span>
+            </span>
+          )}
+        </button>
+
+        {open && hasResults && (
+          <BulkActionsBar
+            selectedCount={selectedCount}
+            selectedAndEnrichedCount={selectedAndEnrichedCount}
+            enriching={enriching}
+            importing={importing}
+            onEnrich={handleBulkEnrich}
+            onImport={handleBulkImport}
+          />
         )}
-      </button>
+      </div>
 
       {open && (
         <Card>
@@ -224,36 +238,25 @@ export default function ColleaguesPanel({
                 No public contacts found at this company.
               </p>
             )}
-            {!loading && colleagues && colleagues.length > 0 && (
-              <>
-                <ul className="space-y-2">
-                  {colleagues.map((c) => {
-                    const selected = selectedIds.has(c.apollo_id);
-                    const enriched = enrichedIds.has(c.apollo_id);
-                    const merged = enriched
-                      ? { ...c, ...(enrichmentData.get(c.apollo_id) ?? {}) }
-                      : c;
-                    return (
-                      <ColleagueRow
-                        key={c.apollo_id}
-                        colleague={merged}
-                        selected={selected}
-                        enriched={enriched}
-                        onToggle={() => toggleSelect(c.apollo_id)}
-                      />
-                    );
-                  })}
-                </ul>
-
-                <BulkActionsBar
-                  selectedCount={selectedCount}
-                  selectedAndEnrichedCount={selectedAndEnrichedCount}
-                  enriching={enriching}
-                  importing={importing}
-                  onEnrich={handleBulkEnrich}
-                  onImport={handleBulkImport}
-                />
-              </>
+            {hasResults && (
+              <ul className="space-y-2">
+                {colleagues!.map((c) => {
+                  const selected = selectedIds.has(c.apollo_id);
+                  const enriched = enrichedIds.has(c.apollo_id);
+                  const merged = enriched
+                    ? { ...c, ...(enrichmentData.get(c.apollo_id) ?? {}) }
+                    : c;
+                  return (
+                    <ColleagueRow
+                      key={c.apollo_id}
+                      colleague={merged}
+                      selected={selected}
+                      enriched={enriched}
+                      onToggle={() => toggleSelect(c.apollo_id)}
+                    />
+                  );
+                })}
+              </ul>
             )}
           </CardContent>
         </Card>
@@ -378,42 +381,39 @@ function BulkActionsBar({
   const enrichDisabled = selectedCount === 0 || enriching;
   const importDisabled = selectedAndEnrichedCount === 0 || importing;
 
+  // Pills sit inline with the Hide button (PATCH-5 §3 — top-of-list toolbar).
   return (
-    <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
-      <Button
+    <>
+      <button
         type="button"
-        variant="outline"
         onClick={onEnrich}
         disabled={enrichDisabled}
+        className="inline-flex items-center gap-2 rounded-full bg-white border border-slate-300 text-slate-900 hover:border-slate-400 text-sm font-medium px-5 py-2.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-slate-300"
       >
         {enriching ? (
           <>Enriching…</>
         ) : (
           <>
-            <span aria-hidden className="mr-1">
-              ⚡
-            </span>
+            <span aria-hidden>⚡</span>
             Enrich selected ({selectedCount})
           </>
         )}
-      </Button>
-      <Button
+      </button>
+      <button
         type="button"
         onClick={onImport}
         disabled={importDisabled}
-        className="bg-blue-600 hover:bg-blue-700 text-white"
+        className="inline-flex items-center gap-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
       >
         {importing ? (
           <>Importing…</>
         ) : (
           <>
-            <span aria-hidden className="mr-1">
-              →
-            </span>
+            <span aria-hidden>→</span>
             Import ({selectedAndEnrichedCount})
           </>
         )}
-      </Button>
-    </div>
+      </button>
+    </>
   );
 }
