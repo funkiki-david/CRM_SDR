@@ -56,6 +56,16 @@ export default function FindByEmailTab({ onImportComplete }: Props) {
   const [input, setInput] = useState("");
   const [result, setResult] = useState<LookupResult>({ state: "idle" });
   const [error, setError] = useState<string | null>(null);
+
+  // Person main card enrich/import state. Resets on every new lookup.
+  // Apollo's /people/match returns a fully-enriched person (the email IS
+  // the lookup key — the row already includes email/phone/linkedin), so
+  // mainEnriched starts true whenever person.email is present (PATCH-5
+  // §4.4 #10 boundary case). User can click Import directly.
+  const [mainEnrichedPerson, setMainEnrichedPerson] = useState<Person | null>(
+    null
+  );
+  const [enrichingMain, setEnrichingMain] = useState(false);
   const [importing, setImporting] = useState(false);
 
   async function submit() {
@@ -63,14 +73,19 @@ export default function FindByEmailTab({ onImportComplete }: Props) {
     if (!raw) return;
     setError(null);
     setResult({ state: "loading" });
+    setMainEnrichedPerson(null);
     try {
       const data = await finderApi.lookupByEmail(raw);
       if (data.found && data.person) {
+        const person = data.person as Person;
         setResult({
           state: "found",
-          person: data.person as Person,
+          person,
           queriedEmail: raw,
         });
+        // Pre-mark as enriched if the match response already carries the
+        // signals we'd otherwise pay credits to fetch.
+        if (person.email) setMainEnrichedPerson(person);
       } else {
         setResult({ state: "not_found", queriedEmail: raw });
       }
@@ -80,8 +95,32 @@ export default function FindByEmailTab({ onImportComplete }: Props) {
     }
   }
 
-  async function importPerson(p: Person) {
+  async function enrichMain(p: Person) {
+    if (!p.apollo_id) return;
+    setEnrichingMain(true);
+    setError(null);
+    try {
+      const data = (await apolloApi.enrich([p.apollo_id])) as {
+        enriched?: Person[];
+      };
+      const updated = data.enriched?.[0];
+      if (updated) {
+        setMainEnrichedPerson({ ...p, ...updated });
+      } else {
+        // Backend returned empty — treat as already-enriched so user can
+        // still proceed to Import.
+        setMainEnrichedPerson(p);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Enrich failed");
+    } finally {
+      setEnrichingMain(false);
+    }
+  }
+
+  async function importMain(p: Person) {
     setImporting(true);
+    setError(null);
     try {
       const report = (await apolloApi.import([
         p as unknown as Record<string, unknown>,
@@ -118,9 +157,14 @@ export default function FindByEmailTab({ onImportComplete }: Props) {
       {result.state === "found" && (
         <>
           <PersonCard
-            person={result.person}
+            person={mainEnrichedPerson ?? result.person}
+            enriched={mainEnrichedPerson !== null}
+            enriching={enrichingMain}
             importing={importing}
-            onImport={() => importPerson(result.person)}
+            onEnrich={() => enrichMain(result.person)}
+            onImport={() =>
+              importMain(mainEnrichedPerson ?? result.person)
+            }
           />
           <ColleaguesPanel
             domain={domainOf(result.queriedEmail)}
@@ -221,11 +265,17 @@ function EmptyState({ email }: { email: string }) {
 
 function PersonCard({
   person,
+  enriched,
+  enriching,
   importing,
+  onEnrich,
   onImport,
 }: {
   person: Person;
+  enriched: boolean;
+  enriching: boolean;
   importing: boolean;
+  onEnrich: () => void;
   onImport: () => void;
 }) {
   const fullName = formatFullName(person);
@@ -244,7 +294,7 @@ function PersonCard({
             {initials}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-slate-900 truncate">
                   {fullName}
@@ -257,13 +307,43 @@ function PersonCard({
                   </p>
                 )}
               </div>
-              <Button
-                onClick={onImport}
-                disabled={importing}
-                className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {importing ? "Importing…" : "Import"}
-              </Button>
+              <div className="shrink-0 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onEnrich}
+                  disabled={enriched || enriching}
+                  className="inline-flex items-center gap-2 rounded-full bg-white border border-slate-300 text-slate-900 hover:border-slate-400 text-sm font-medium px-5 py-2.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-slate-300"
+                >
+                  {enriching ? (
+                    <>Enriching…</>
+                  ) : enriched ? (
+                    <>
+                      <span aria-hidden>✓</span>
+                      Enriched
+                    </>
+                  ) : (
+                    <>
+                      <span aria-hidden>⚡</span>
+                      Enrich
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onImport}
+                  disabled={!enriched || importing}
+                  className="inline-flex items-center gap-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+                >
+                  {importing ? (
+                    <>Importing…</>
+                  ) : (
+                    <>
+                      <span aria-hidden>→</span>
+                      Import
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
             <div className="flex flex-wrap gap-x-5 gap-y-1 mt-3 text-xs text-slate-500">
               {person.email && (
