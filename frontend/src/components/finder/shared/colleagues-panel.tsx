@@ -319,15 +319,10 @@ function ColleagueRow({
             </Badge>
           )}
         </div>
-        <p className="text-xs text-slate-500 truncate">
-          {colleague.title || "—"}
-          {enriched && colleague.email && (
-            <>
-              {" · "}
-              <span className="font-mono">{colleague.email}</span>
-            </>
-          )}
-        </p>
+        <ColleagueMetaLine
+          title={colleague.title}
+          email={enriched ? colleague.email : null}
+        />
       </div>
       {!enriched && (
         <span
@@ -339,6 +334,27 @@ function ColleagueRow({
         </span>
       )}
     </li>
+  );
+}
+
+/** Title · email line that hides when both are missing and skips the dash
+ *  separator when one side is empty (PATCH-5 §2). */
+function ColleagueMetaLine({
+  title,
+  email,
+}: {
+  title?: string | null;
+  email?: string | null;
+}) {
+  const cleanTitle = (title || "").trim();
+  const cleanEmail = (email || "").trim();
+  if (!cleanTitle && !cleanEmail) return null;
+  return (
+    <p className="text-xs text-slate-500 truncate">
+      {cleanTitle && <span>{cleanTitle}</span>}
+      {cleanTitle && cleanEmail && " · "}
+      {cleanEmail && <span className="font-mono">{cleanEmail}</span>}
+    </p>
   );
 }
 

@@ -249,15 +249,13 @@ function PersonCard({
                 <h3 className="text-lg font-semibold text-slate-900 truncate">
                   {fullName}
                 </h3>
-                <p className="text-sm text-slate-600 truncate">
-                  {person.title || "—"}
-                  {company && (
-                    <>
-                      {" · "}
-                      <span className="text-slate-700">{company}</span>
-                    </>
-                  )}
-                </p>
+                {(person.title?.trim() || company) && (
+                  <p className="text-sm text-slate-600 truncate">
+                    {[person.title?.trim() || null, company]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
               </div>
               <Button
                 onClick={onImport}
