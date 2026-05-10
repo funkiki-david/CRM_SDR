@@ -13,7 +13,7 @@
  */
 "use client";
 
-import { Suspense, useCallback, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import AppShell from "@/components/app-shell";
 import FindByWebsiteTab from "@/components/finder/find-by-website-tab";
@@ -39,6 +39,17 @@ function FinderPageInner() {
   const tabParam = searchParams.get("tab") as TabKey | null;
   const currentTab: TabKey =
     tabParam && VALID_TABS.includes(tabParam) ? tabParam : "website";
+
+  // PATCH-6: when ?tab= is present but not a valid value (e.g.
+  // /finder?tab=invalid_xyz), strip the param so the URL matches the
+  // rendered tab. router.replace doesn't add a history entry — clean
+  // back-button behavior. Bare /finder (no ?tab=) is left alone since
+  // it correctly renders the default Find by Website tab.
+  useEffect(() => {
+    if (tabParam !== null && !VALID_TABS.includes(tabParam)) {
+      router.replace("/finder");
+    }
+  }, [tabParam, router]);
 
   const setTab = useCallback(
     (tab: TabKey) => {
