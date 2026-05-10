@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { apolloApi, finderApi } from "@/lib/api";
+import { formatFullName, getInitials } from "@/lib/utils";
 import type { ImportStats } from "./shared/import-result-modal";
 import ColleaguesPanel from "./shared/colleagues-panel";
 
@@ -227,10 +228,8 @@ function PersonCard({
   importing: boolean;
   onImport: () => void;
 }) {
-  const fullName =
-    person.name ||
-    [person.first_name, person.last_name].filter(Boolean).join(" ") ||
-    "Unknown";
+  const fullName = formatFullName(person);
+  const initials = getInitials(person);
   const company =
     person.organization?.name || person.organization_name || null;
   const location = [person.city, person.state, person.country]
@@ -242,7 +241,7 @@ function PersonCard({
       <CardContent className="p-6">
         <div className="flex items-start gap-4">
           <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-semibold">
-            {initialsOf(fullName)}
+            {initials}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-3">
@@ -316,14 +315,4 @@ function Field({
 function domainOf(email: string): string {
   const at = email.lastIndexOf("@");
   return at >= 0 ? email.slice(at + 1).toLowerCase() : email.toLowerCase();
-}
-
-function initialsOf(name: string): string {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .map((s) => s[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 }

@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { apolloApi } from "@/lib/api";
+import { formatFullName, getInitials } from "@/lib/utils";
 import type { ImportStats } from "./import-result-modal";
 
 export interface Colleague {
@@ -280,17 +281,8 @@ function ColleagueRow({
   enriched: boolean;
   onToggle: () => void;
 }) {
-  const fullName =
-    colleague.name ||
-    [colleague.first_name, colleague.last_name].filter(Boolean).join(" ") ||
-    "Unknown";
-  const initials = fullName
-    .split(" ")
-    .filter(Boolean)
-    .map((s) => s[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const fullName = formatFullName(colleague);
+  const initials = getInitials(colleague);
 
   return (
     <li

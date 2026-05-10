@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apolloApi, finderApi } from "@/lib/api";
+import { formatFullName } from "@/lib/utils";
 import type { ImportStats } from "./shared/import-result-modal";
 
 interface Props {
@@ -582,10 +583,10 @@ function ResultRow({
   enriched: boolean;
   onToggle: () => void;
 }) {
-  const fullName =
-    row.name ||
-    [row.first_name, row.last_name].filter(Boolean).join(" ") ||
-    null;
+  // Web rows have no person fields — only show person info when first_name
+  // or last_name is populated (Apollo result), not for synthetic web rows.
+  const hasPerson = Boolean(row.first_name || row.last_name);
+  const fullName = hasPerson ? formatFullName(row) : null;
   const company = row.company_name || row.company_domain || null;
   const location = [row.city, row.state, row.country]
     .filter(Boolean)
