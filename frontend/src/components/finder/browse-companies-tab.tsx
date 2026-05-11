@@ -12,12 +12,14 @@
  */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { apolloApi, finderApi } from "@/lib/api";
+import { formatFullName } from "@/lib/utils";
 import type { ImportStats } from "./shared/import-result-modal";
 
 interface Props {
@@ -173,16 +175,6 @@ export default function BrowseCompaniesTab({ onImportComplete }: Props) {
     });
   }
 
-  // Toggle every Apollo row's selection. Web fallback rows are excluded
-  // because their synthetic ids can't be enriched/imported.
-  function toggleSelectAll() {
-    const apolloIds = results.filter((r) => !r._isWeb).map((r) => r.apollo_id);
-    setSelected((prev) => {
-      const allSelected = apolloIds.length > 0 && apolloIds.every((id) => prev.has(id));
-      return allSelected ? new Set() : new Set(apolloIds);
-    });
-  }
-
   async function handleBulkEnrich() {
     // Only enrich rows with a real Apollo id (web rows have synthetic ids).
     const ids = results
@@ -302,7 +294,6 @@ export default function BrowseCompaniesTab({ onImportComplete }: Props) {
           selectableCount={selectableCount}
           enrichableCount={enrichableCount}
           onToggleSelect={toggleSelect}
-          onToggleSelectAll={toggleSelectAll}
           onBulkEnrich={handleBulkEnrich}
           onBulkImport={handleBulkImport}
         />
@@ -500,7 +491,6 @@ function ResultsBlock({
   selectableCount,
   enrichableCount,
   onToggleSelect,
-  onToggleSelectAll,
   onBulkEnrich,
   onBulkImport,
 }: {
@@ -513,25 +503,9 @@ function ResultsBlock({
   selectableCount: number;
   enrichableCount: number;
   onToggleSelect: (id: string) => void;
-  onToggleSelectAll: () => void;
   onBulkEnrich: () => void;
   onBulkImport: () => void;
 }) {
-  // ───── Select-All / indeterminate calculation (only over Apollo rows; web
-  //       rows have synthetic ids and can't be selected anyway).
-  const apolloRows = useMemo(() => results.filter((r) => !r._isWeb), [results]);
-  const allSelected =
-    apolloRows.length > 0 && apolloRows.every((r) => selected.has(r.apollo_id));
-  const someSelected =
-    !allSelected && apolloRows.some((r) => selected.has(r.apollo_id));
-
-  const headerCheckboxRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (headerCheckboxRef.current) {
-      headerCheckboxRef.current.indeterminate = someSelected;
-    }
-  }, [someSelected]);
-
   if (searching) {
     return (
       <Card>
@@ -559,82 +533,41 @@ function ResultsBlock({
 
   return (
     <div className="space-y-3">
-      {/* Top toolbar — same pill pattern as ColleaguesPanel (PATCH-5 §3) */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <span className="text-sm text-slate-600 mr-auto">
-          Found {results.length}{" "}
-          {results.length === 1 ? "person" : "people"}
-        </span>
-        <button
-          type="button"
-          onClick={onBulkEnrich}
-          disabled={enrichableCount === 0 || enriching}
-          className="inline-flex items-center gap-2 rounded-full bg-white border border-slate-300 text-slate-900 hover:border-slate-400 text-sm font-medium px-5 py-2.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-slate-300"
-        >
-          {enriching ? (
-            <>Enriching…</>
-          ) : (
-            <>
-              <span aria-hidden>⚡</span>
-              Enrich selected ({enrichableCount})
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={onBulkImport}
-          disabled={selectableCount === 0 || importing}
-          className="inline-flex items-center gap-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
-        >
-          {importing ? (
-            <>Importing…</>
-          ) : (
-            <>
-              <span aria-hidden>→</span>
-              Import ({selectableCount})
-            </>
-          )}
-        </button>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-slate-500">
+          {results.length} result{results.length === 1 ? "" : "s"}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={onBulkEnrich}
+            disabled={enrichableCount === 0 || enriching}
+          >
+            {enriching ? "Enriching…" : `Bulk Enrich (${enrichableCount})`}
+          </Button>
+          <Button
+            onClick={onBulkImport}
+            disabled={selectableCount === 0 || importing}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {importing
+              ? "Importing…"
+              : `Import to CRM (${selectableCount})`}
+          </Button>
+        </div>
       </div>
 
-      {/* Results table */}
-      <Card>
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wider text-slate-500 bg-slate-50">
-                <th className="px-3 py-3 w-10">
-                  <input
-                    ref={headerCheckboxRef}
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={onToggleSelectAll}
-                    aria-label="Select all rows"
-                    disabled={apolloRows.length === 0}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-30"
-                  />
-                </th>
-                <th className="px-3 py-3 font-medium">First Name</th>
-                <th className="px-3 py-3 font-medium">Last Name</th>
-                <th className="px-3 py-3 font-medium">Title</th>
-                <th className="px-3 py-3 font-medium">Company</th>
-                <th className="px-3 py-3 font-medium">Email</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r) => (
-                <ResultRow
-                  key={r.apollo_id}
-                  row={r}
-                  selected={selected.has(r.apollo_id)}
-                  enriched={enrichedIds.has(r.apollo_id)}
-                  onToggle={() => onToggleSelect(r.apollo_id)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      <ul className="space-y-2">
+        {results.map((r) => (
+          <ResultRow
+            key={r.apollo_id}
+            row={r}
+            selected={selected.has(r.apollo_id)}
+            enriched={enrichedIds.has(r.apollo_id)}
+            onToggle={() => onToggleSelect(r.apollo_id)}
+          />
+        ))}
+      </ul>
     </div>
   );
 }
@@ -650,48 +583,78 @@ function ResultRow({
   enriched: boolean;
   onToggle: () => void;
 }) {
-  // Web rows (fallback when Apollo returns 0) carry only company info — show
-  // it under the Company column with empty cells elsewhere. Checkbox stays
-  // disabled because there's no Apollo id to enrich/import.
-  const isWeb = row._isWeb === true;
-  void enriched; // §2 wires lock icons; §1 just shows raw values.
+  // Web rows have no person fields — only show person info when first_name
+  // or last_name is populated (Apollo result), not for synthetic web rows.
+  const hasPerson = Boolean(row.first_name || row.last_name);
+  const fullName = hasPerson ? formatFullName(row) : null;
+  const company = row.company_name || row.company_domain || null;
+  const location = [row.city, row.state, row.country]
+    .filter(Boolean)
+    .join(", ");
   return (
-    <tr
-      onClick={isWeb ? undefined : onToggle}
-      className={`border-b border-slate-100 transition-colors ${
-        isWeb
-          ? "text-slate-500"
-          : "cursor-pointer hover:bg-slate-50"
-      } ${selected ? "bg-blue-50" : ""}`}
-    >
-      <td className="px-3 py-3 w-10">
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={onToggle}
-          onClick={(e) => e.stopPropagation()}
-          disabled={isWeb}
-          aria-label={`Select ${row.first_name || row.company_name || "row"}`}
-          className="h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-30"
-        />
-      </td>
-      <td className="px-3 py-3 font-medium text-slate-900">
-        {row.first_name || (isWeb ? "" : "—")}
-      </td>
-      <td className="px-3 py-3 text-slate-700">{row.last_name || ""}</td>
-      <td
-        className="px-3 py-3 text-slate-600 truncate max-w-[280px]"
-        title={row.title || undefined}
-      >
-        {row.title || (isWeb ? "" : "—")}
-      </td>
-      <td className="px-3 py-3 text-slate-600 truncate max-w-[180px]">
-        {row.company_name || row.company_domain || "—"}
-      </td>
-      <td className="px-3 py-3 text-slate-600 truncate max-w-[220px] font-mono text-xs">
-        {row.email || ""}
-      </td>
-    </tr>
+    <li>
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggle}
+              disabled={row._isWeb}
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-30"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-semibold text-slate-900 truncate">
+                  {company || fullName || row.company_domain || "—"}
+                </h3>
+                {enriched && (
+                  <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100 text-[10px]">
+                    enriched
+                  </Badge>
+                )}
+                {row.is_existing && (
+                  <Badge variant="outline" className="text-[10px]">
+                    in CRM
+                  </Badge>
+                )}
+              </div>
+              {fullName && (
+                <p className="text-xs text-slate-500 mt-0.5 truncate">
+                  {fullName}
+                  {row.title && (
+                    <>
+                      {" · "}
+                      <span className="text-slate-700">{row.title}</span>
+                    </>
+                  )}
+                </p>
+              )}
+              {row._summary && (
+                <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                  {row._summary}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-2 text-[11px] text-slate-500">
+                {row.email && <span className="font-mono">{row.email}</span>}
+                {row.industry && <span>{row.industry}</span>}
+                {location && <span>{location}</span>}
+                {row.linkedin_url && (
+                  <a
+                    href={row.linkedin_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    LinkedIn ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </li>
   );
 }
 
