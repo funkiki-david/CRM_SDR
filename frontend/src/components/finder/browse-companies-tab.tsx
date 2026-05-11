@@ -202,12 +202,22 @@ export default function BrowseCompaniesTab({ onImportComplete }: Props) {
         enriched?: SearchResult[];
       };
       const enriched = data.enriched || [];
-      setResults((prev) =>
-        prev.map((r) => {
+      // Merge enriched fields onto matching rows, then stable-sort so rows
+      // with a real email rise to the top. Array.prototype.sort has been
+      // stable since ES2019, so untouched groups keep their Apollo order.
+      setResults((prev) => {
+        const merged = prev.map((r) => {
           const match = enriched.find((e) => e.apollo_id === r.apollo_id);
           return match ? { ...r, ...match } : r;
-        })
-      );
+        });
+        return [...merged].sort((a, b) => {
+          const aHas = Boolean((a.email || "").trim());
+          const bHas = Boolean((b.email || "").trim());
+          if (aHas && !bHas) return -1;
+          if (!aHas && bHas) return 1;
+          return 0;
+        });
+      });
       setEnrichedIds((prev) => {
         const next = new Set(prev);
         enriched.forEach((e) => next.add(e.apollo_id));
