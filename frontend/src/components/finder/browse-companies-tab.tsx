@@ -654,14 +654,11 @@ function ResultRow({
   // it under the Company column with empty cells elsewhere. Checkbox stays
   // disabled because there's no Apollo id to enrich/import.
   const isWeb = row._isWeb === true;
-  void enriched; // §2 wires lock icons; §1 just shows raw values.
   return (
     <tr
       onClick={isWeb ? undefined : onToggle}
       className={`border-b border-slate-100 transition-colors ${
-        isWeb
-          ? "text-slate-500"
-          : "cursor-pointer hover:bg-slate-50"
+        isWeb ? "text-slate-500" : "cursor-pointer hover:bg-slate-50"
       } ${selected ? "bg-blue-50" : ""}`}
     >
       <td className="px-3 py-3 w-10">
@@ -678,7 +675,13 @@ function ResultRow({
       <td className="px-3 py-3 font-medium text-slate-900">
         {row.first_name || (isWeb ? "" : "—")}
       </td>
-      <td className="px-3 py-3 text-slate-700">{row.last_name || ""}</td>
+      <td className="px-3 py-3 text-slate-700">
+        <LockedOrValue
+          value={row.last_name}
+          enriched={enriched}
+          actionable={!isWeb}
+        />
+      </td>
       <td
         className="px-3 py-3 text-slate-600 truncate max-w-[280px]"
         title={row.title || undefined}
@@ -689,9 +692,41 @@ function ResultRow({
         {row.company_name || row.company_domain || "—"}
       </td>
       <td className="px-3 py-3 text-slate-600 truncate max-w-[220px] font-mono text-xs">
-        {row.email || ""}
+        <LockedOrValue
+          value={row.email}
+          enriched={enriched}
+          actionable={!isWeb}
+        />
       </td>
     </tr>
+  );
+}
+
+/** Render real value when the row is enriched. Show 🔒 placeholder when
+ *  the row could be enriched but hasn't been. Web fallback rows
+ *  (actionable=false) just show blank — they can't be unlocked. */
+function LockedOrValue({
+  value,
+  enriched,
+  actionable,
+}: {
+  value: string | null | undefined;
+  enriched: boolean;
+  actionable: boolean;
+}) {
+  if (enriched) {
+    const trimmed = (value || "").trim();
+    return <>{trimmed || "—"}</>;
+  }
+  if (!actionable) return null;
+  return (
+    <span
+      className="text-slate-400"
+      title="Enrich to reveal"
+      aria-label="Hidden — enrich to reveal"
+    >
+      🔒
+    </span>
   );
 }
 
