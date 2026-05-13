@@ -81,15 +81,30 @@ export const dashboardApi = {
       body: JSON.stringify({ next_follow_up: nextFollowUp, follow_up_reason: reason }),
     }),
 
-  /** Mark follow-up done (clear next_follow_up) */
+  /** Mark follow-up done (clear next_follow_up; new round will be scheduled later) */
   completeFollowUp: (leadId: number) =>
     request(`/api/dashboard/follow-ups/${leadId}/done`, { method: "PATCH" }),
 
-  /** Quick stats for top row */
+  /** Close a follow-up — clear next_follow_up + stamp follow_up_closed_at.
+   *  Distinct from done: "close" = stop bugging me; Lead stays Active. */
+  closeFollowUp: (leadId: number) =>
+    request(`/api/dashboard/follow-ups/${leadId}/close`, { method: "PATCH" }),
+
+  /** Quick stats for top row (legacy — V1 dashboard derives stats from follow-ups) */
   getQuickStats: () => request("/api/dashboard/quick-stats"),
 
-  /** Get pipeline stage counts */
-  getPipelineSummary: () => request("/api/dashboard/pipeline-summary"),
+  /** Pipeline stage counts. scope=mine (default) filters on
+   *  Contact.assigned_to=current_user; scope=team returns all (admin only;
+   *  non-admin downgrades silently). */
+  getPipelineSummary: (scope: "mine" | "team" = "mine") =>
+    request(`/api/dashboard/pipeline-summary?scope=${scope}`),
+
+  /** Unread @mentions for the current user, up to 20 most recent. */
+  getMentions: () => request("/api/dashboard/mentions"),
+
+  /** Mark one mention as read. Idempotent. */
+  dismissMention: (commentId: number) =>
+    request(`/api/dashboard/mentions/${commentId}/dismiss`, { method: "PATCH" }),
 };
 
 /**
