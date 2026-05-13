@@ -9,12 +9,13 @@ prefix. The four endpoints:
   PATCH  /api/activities/comments/{comment_id}     edit own comment (preserves previous_text)
   DELETE /api/activities/comments/{comment_id}     delete (author or admin)
 """
+import re
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +23,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.activity import Activity
 from app.models.activity_comment import ActivityComment
+from app.models.contact import Contact
 from app.models.user import User, UserRole
 
 router = APIRouter(prefix="/api/activities", tags=["Activity Comments"])
@@ -33,6 +35,7 @@ router = APIRouter(prefix="/api/activities", tags=["Activity Comments"])
 
 class CommentCreate(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
+    auto_notify_assigned: bool = True
 
 
 class CommentUpdate(BaseModel):
@@ -59,6 +62,42 @@ async def _ensure_activity_exists(db: AsyncSession, activity_id: int) -> None:
     a = await db.get(Activity, activity_id)
     if a is None:
         raise HTTPException(status_code=404, detail="Activity not found")
+
+
+# Matches "@token" where token is at least 2 chars of word + dots
+# (allows first.last style). Stops at whitespace, punctuation, etc.
+_MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9._-]{1,})")
+
+
+async def _resolve_mentions(db: AsyncSession, body: str) -> List[int]:
+    """Parse @tokens out of comment body and resolve each to a user id.
+
+    Matching is case-insensitive and tries both full_name (whole token after
+    "@" with a space inserted between first-name and rest) and email (token
+    matched against the local-part). Returns deduplicated user_ids in the
+    order first seen.
+    """
+    tokens = _MENTION_RE.findall(body)
+    if not tokens:
+        return []
+
+    seen: List[int] = []
+    seen_set: set = set()
+    for tok in tokens:
+        # Try email local-part first (most precise).
+        # Then try full_name match: replace "." with " " and try case-insensitive.
+        name_guess = tok.replace(".", " ").replace("_", " ")
+        result = await db.execute(
+            select(User.id).where(
+                (func.lower(User.email).like(f"{tok.lower()}@%"))
+                | (func.lower(User.full_name) == name_guess.lower())
+            ).limit(1)
+        )
+        row = result.first()
+        if row and row[0] not in seen_set:
+            seen.append(row[0])
+            seen_set.add(row[0])
+    return seen
 
 
 def _serialize(c: ActivityComment) -> CommentResponse:
@@ -106,10 +145,33 @@ async def create_comment(
     current_user: User = Depends(get_current_user),
 ):
     await _ensure_activity_exists(db, activity_id)
+    text = body.text.strip()
+
+    # Resolve explicit @mentions in the body.
+    mention_ids = await _resolve_mentions(db, text)
+
+    # Plus the contact's assigned manager (unless author opted out OR the
+    # author IS the assignee — no point pinging yourself).
+    if body.auto_notify_assigned:
+        contact_q = await db.execute(
+            select(Contact.assigned_to)
+            .join(Activity, Activity.contact_id == Contact.id)
+            .where(Activity.id == activity_id)
+        )
+        assigned_id = contact_q.scalar_one_or_none()
+        if (
+            assigned_id is not None
+            and assigned_id != current_user.id
+            and assigned_id not in mention_ids
+        ):
+            mention_ids.append(assigned_id)
+
     c = ActivityComment(
         activity_id=activity_id,
         user_id=current_user.id,
-        text=body.text.strip(),
+        text=text,
+        mentioned_user_ids=mention_ids,
+        auto_notify_assigned=body.auto_notify_assigned,
     )
     db.add(c)
     await db.commit()
