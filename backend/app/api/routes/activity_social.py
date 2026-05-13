@@ -72,10 +72,13 @@ _MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9._-]{1,})")
 async def _resolve_mentions(db: AsyncSession, body: str) -> List[int]:
     """Parse @tokens out of comment body and resolve each to a user id.
 
-    Matching is case-insensitive and tries both full_name (whole token after
-    "@" with a space inserted between first-name and rest) and email (token
-    matched against the local-part). Returns deduplicated user_ids in the
-    order first seen.
+    Matching is case-insensitive (ILIKE) and uses CONTAINS semantics on
+    full_name — so "@dav" matches "David", "@al" matches "Alex", etc. The
+    email branch keeps prefix anchoring (token matched against the local
+    part before "@") since email local-parts are typically typed in full.
+
+    Determinism: when several users could match (e.g. "@a" matching both
+    Alex and Amie), the lowest user id wins (ORDER BY id ASC + LIMIT 1).
     """
     tokens = _MENTION_RE.findall(body)
     if not tokens:
@@ -84,14 +87,14 @@ async def _resolve_mentions(db: AsyncSession, body: str) -> List[int]:
     seen: List[int] = []
     seen_set: set = set()
     for tok in tokens:
-        # Try email local-part first (most precise).
-        # Then try full_name match: replace "." with " " and try case-insensitive.
+        # The regex already restricts tok to [A-Za-z0-9._-], so no SQL
+        # meta-characters need escaping in the LIKE / ILIKE patterns below.
         name_guess = tok.replace(".", " ").replace("_", " ")
         result = await db.execute(
             select(User.id).where(
                 (func.lower(User.email).like(f"{tok.lower()}@%"))
-                | (func.lower(User.full_name) == name_guess.lower())
-            ).limit(1)
+                | (User.full_name.ilike(f"%{name_guess}%"))
+            ).order_by(User.id.asc()).limit(1)
         )
         row = result.first()
         if row and row[0] not in seen_set:
