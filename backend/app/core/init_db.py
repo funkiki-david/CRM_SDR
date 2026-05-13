@@ -165,16 +165,17 @@ async def init_db():
             "role": UserRole.MANAGER,
             "team": "GT Marketing",
         },
-        # Disabled 2026-05-05: Graphictac.usa@gmail.com not currently in use.
-        # Uncomment to re-enable. Shared login for Alex + Amie; the live DB
-        # row already exists with full_name "Alex Amie".
-        # {
-        #     "email": "Graphictac.usa@gmail.com",
-        #     "password": "admin123",
-        #     "full_name": "Alex Amie",
-        #     "role": UserRole.MANAGER,
-        #     "team": "GT Marketing",
-        # },
+        # Re-enabled 2026-05-12 per David. Shared login for the Alex/Amie pair
+        # ("Amie Alex" is the display name they prefer). Seed is idempotent, so
+        # this only creates the user on a fresh DB; the production row already
+        # exists with id=6 and is unaffected.
+        {
+            "email": "Graphictac.usa@gmail.com",
+            "password": "admin123",
+            "full_name": "Amie Alex",
+            "role": UserRole.MANAGER,
+            "team": "GT Marketing",
+        },
     ]
 
     async with async_session() as session:
