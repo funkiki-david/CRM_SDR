@@ -39,6 +39,13 @@ class Lead(Base):
     # === 跟进计划 ===
     next_follow_up: Mapped[Optional[datetime]] = mapped_column(Date)  # 下次跟进日期
     follow_up_reason: Mapped[Optional[str]] = mapped_column(String(500))  # 跟进原因/待办
+    # Dashboard V1 (2026-05-12): when SDR clicks "Close follow-up" on the
+    # dashboard row, next_follow_up is cleared and this timestamp records
+    # the closure. The Lead/Contact stays Active — this is "I'm done chasing
+    # this one for now", not "closed lost".
+    follow_up_closed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # === 关联 ===
     contact_id: Mapped[int] = mapped_column(

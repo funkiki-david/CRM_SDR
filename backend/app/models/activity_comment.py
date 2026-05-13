@@ -12,9 +12,10 @@ Edit/Delete rules (enforced in route layer, not DB):
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 
-from sqlalchemy import Integer, ForeignKey, Text, DateTime, Index
+from sqlalchemy import Boolean, Integer, ForeignKey, Text, DateTime, Index
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -43,6 +44,20 @@ class ActivityComment(Base):
     # Single-level history — last value before the most recent edit. Kept for
     # audit; the UI does not surface it.
     previous_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # === Dashboard V1 mention plumbing (2026-05-12) ===
+    # Postgres ARRAY of user ids this comment notifies. Filled at create time
+    # from (a) parsed @mentions in the body and (b) contact.assigned_to when
+    # auto_notify_assigned=True. Empty = no inbox routing.
+    mentioned_user_ids: Mapped[List[int]] = mapped_column(
+        ARRAY(Integer), nullable=False, default=list, server_default="{}"
+    )
+    # Author can opt out per-comment. Default True so the common case
+    # auto-routes to the contact's assigned manager.
+    auto_notify_assigned: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

@@ -110,6 +110,23 @@ async def init_db():
             "DROP TABLE IF EXISTS embeddings CASCADE",
             "ALTER TABLE enrichment_log DROP COLUMN IF EXISTS matched_fields",
             "DROP EXTENSION IF EXISTS vector",
+            # 2026-05-12 Dashboard V1 — mention plumbing + close action.
+            # ActivityComment gets two new columns; new join table tracks
+            # per-user read state; Lead gets a close timestamp.
+            "ALTER TABLE activity_comments ADD COLUMN IF NOT EXISTS mentioned_user_ids INTEGER[] NOT NULL DEFAULT '{}'",
+            "ALTER TABLE activity_comments ADD COLUMN IF NOT EXISTS auto_notify_assigned BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE leads ADD COLUMN IF NOT EXISTS follow_up_closed_at TIMESTAMPTZ",
+            """
+            CREATE TABLE IF NOT EXISTS activity_comment_reads (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                comment_id INTEGER NOT NULL REFERENCES activity_comments(id) ON DELETE CASCADE,
+                read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (user_id, comment_id)
+            )
+            """,
+            # GIN index speeds up the "mentioned_user_ids @> ARRAY[me]" filter
+            # used by GET /api/dashboard/mentions.
+            "CREATE INDEX IF NOT EXISTS ix_activity_comments_mentioned_user_ids ON activity_comments USING GIN (mentioned_user_ids)",
         ]
         for sql in field_migrations:
             await conn.execute(text(sql))
