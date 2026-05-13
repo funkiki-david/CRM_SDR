@@ -45,6 +45,7 @@ _origins = [
     "http://localhost:3000",
     "https://crmsdr-production.up.railway.app",
     "https://natural-generosity-production.up.railway.app",
+    "https://sdr.crm.graphictac.info",
 ]
 # 可选：FRONTEND_URL 环境变量追加额外 origin
 if os.getenv("FRONTEND_URL") and os.getenv("FRONTEND_URL") not in _origins:
