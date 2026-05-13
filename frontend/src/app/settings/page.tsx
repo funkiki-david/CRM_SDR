@@ -28,6 +28,16 @@ const NAV_SECTIONS = [
   { id: "danger", label: "Danger zone" },
 ] as const;
 
+// Only these two accounts see Integrations / Budget / Danger zone. Everyone
+// else sees just "Team". Compared case-insensitively because Postgres stores
+// emails as-typed and the regular sign-in flow doesn't normalize casing.
+const FULL_SETTINGS_ACCESS = [
+  "info@amazonsolutions.us",
+  "marketing@graphictac.biz",
+];
+
+const RESTRICTED_HASHES = new Set(["integrations", "budget", "danger"]);
+
 export default function SettingsPage() {
   const router = useRouter();
 
@@ -48,9 +58,19 @@ export default function SettingsPage() {
   const [anthropicMessage, setAnthropicMessage] = useState("");
   const [anthropicValid, setAnthropicValid] = useState<boolean | null>(null);
 
-  // Current user (for Team Members Admin-only controls)
+  // Current user (for Team Members Admin-only controls + nav filtering)
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<"admin" | "manager" | "sdr" | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+
+  // Email whitelist gate — null email (still loading) renders Team-only by
+  // default to avoid a flash of the full nav before getMe() resolves.
+  const showFullSettings =
+    currentUserEmail !== null &&
+    FULL_SETTINGS_ACCESS.includes(currentUserEmail.toLowerCase());
+  const visibleNav = showFullSettings
+    ? NAV_SECTIONS
+    : NAV_SECTIONS.filter((s) => s.id === "team");
 
   // Personal AI budget (for the Budget section bar)
   const [myUsage, setMyUsage] = useState<MyUsage | null>(null);
@@ -138,17 +158,36 @@ export default function SettingsPage() {
     loadApolloStatus();
     loadAnthropicStatus();
     loadMyUsage();
-    authApi.getMe().then((u: { id: number; role: "admin" | "manager" | "sdr" }) => {
-      setCurrentUserId(u.id);
-      setCurrentUserRole(u.role);
-    }).catch(() => { /* ignore */ });
+    authApi
+      .getMe()
+      .then((u: { id: number; role: "admin" | "manager" | "sdr"; email: string }) => {
+        setCurrentUserId(u.id);
+        setCurrentUserRole(u.role);
+        setCurrentUserEmail(u.email);
+      })
+      .catch(() => { /* ignore */ });
   }, []);
 
+  // Route protection: when the user lands with a hash pointing at a section
+  // they shouldn't see (#integrations / #budget / #danger), strip it once
+  // we know their email. router.replace keeps the back button clean.
+  useEffect(() => {
+    if (currentUserEmail === null) return;
+    if (showFullSettings) return;
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace(/^#/, "").toLowerCase();
+    if (RESTRICTED_HASHES.has(hash)) {
+      router.replace("/settings");
+      setActiveSection("team");
+    }
+  }, [currentUserEmail, showFullSettings, router]);
+
   // Highlight the nav item for whichever section is closest to the top
-  // of the viewport while scrolling.
+  // of the viewport while scrolling. Re-attach when the visible nav set
+  // changes (e.g. after the user email loads and 3 sections appear).
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const sections = NAV_SECTIONS
+    const sections = visibleNav
       .map((s) => document.getElementById(s.id))
       .filter((el): el is HTMLElement => el !== null);
     if (sections.length === 0) return;
@@ -163,7 +202,7 @@ export default function SettingsPage() {
     );
     sections.forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, []);
+  }, [visibleNav]);
 
   return (
     <AppShell>
@@ -178,7 +217,7 @@ export default function SettingsPage() {
           {/* === Left nav === */}
           <aside className="sticky top-6 self-start">
             <nav className="flex flex-col gap-1 text-sm">
-              {NAV_SECTIONS.map((s) => {
+              {visibleNav.map((s) => {
                 const isActive = activeSection === s.id;
                 return (
                   <a
@@ -206,6 +245,8 @@ export default function SettingsPage() {
         <section id="team" className="scroll-mt-6">
           <TeamMembers currentUserId={currentUserId} currentUserRole={currentUserRole} />
         </section>
+
+        {showFullSettings && (<>
 
         {/* === Integrations: Apollo + Anthropic === */}
         <section id="integrations" className="scroll-mt-6 space-y-6">
@@ -425,6 +466,8 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </section>
+
+        </>)}
 
           </main>
         </div>
