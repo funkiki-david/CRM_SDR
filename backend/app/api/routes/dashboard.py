@@ -4,21 +4,23 @@ Returns leads that need follow-up today, sorted by urgency
 """
 
 from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import and_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.config import AI_DAILY_BUDGET_USD, AI_MONTHLY_BUDGET_USD
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.lead import Lead, LeadStatus
 from app.models.contact import Contact
 from app.models.activity import Activity, ActivityType
+from app.models.activity_comment import ActivityComment
+from app.models.activity_comment_read import ActivityCommentRead
 from app.services.ai_budget import (
     get_spend_today,
     get_spend_month,
@@ -237,6 +239,33 @@ async def mark_follow_up_done(
     return {"lead_id": lead.id, "status": "done"}
 
 
+@router.patch("/follow-ups/{lead_id}/close")
+async def close_follow_up(
+    lead_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Close a follow-up — clear next_follow_up + stamp follow_up_closed_at.
+
+    Distinct from /done: "done" means "I followed up this round, schedule
+    next round later." "close" means "I'm done chasing this one for now —
+    don't show it on the dashboard." The Lead/Contact remains Active.
+    """
+    _ = current_user  # auth required, team-shared, no per-owner gating
+    lead = await db.get(Lead, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    lead.next_follow_up = None
+    lead.follow_up_reason = None
+    lead.follow_up_closed_at = datetime.now(timezone.utc)
+    await db.flush()
+    return {
+        "lead_id": lead.id,
+        "status": "closed",
+        "follow_up_closed_at": lead.follow_up_closed_at.isoformat(),
+    }
+
+
 @router.get("/quick-stats")
 async def get_quick_stats(
     db: AsyncSession = Depends(get_db),
@@ -274,25 +303,136 @@ async def get_quick_stats(
 
 @router.get("/pipeline-summary")
 async def get_pipeline_summary(
+    scope: Literal["mine", "team"] = Query("mine"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Pipeline overview — count of leads in each stage.
-    Returns counts grouped by LeadStatus.
+
+    scope=mine (default): only leads on contacts where assigned_to = me.
+    scope=team:           all leads (admin-only — SDR/Manager get downgraded
+                          to "mine" silently).
+
+    Returns:
+      {
+        "scope": "mine" | "team",
+        "pipeline": { "new": N, "contacted": N, ..., "closed_lost": N }
+      }
     """
-    query = select(Lead.status, func.count(Lead.id)).group_by(Lead.status)
-    # Team-shared: everyone sees the same pipeline counts.
+    # Permission downgrade: non-admin requesting team scope falls back to mine.
+    effective_scope = scope if current_user.role == UserRole.ADMIN else "mine"
+
+    query = select(Lead.status, func.count(Lead.id))
+    if effective_scope == "mine":
+        query = query.join(Contact, Lead.contact_id == Contact.id).where(
+            Contact.assigned_to == current_user.id
+        )
+    query = query.group_by(Lead.status)
 
     result = await db.execute(query)
     rows = result.all()
 
-    # Build counts dict with all statuses defaulting to 0
     counts = {s.value: 0 for s in LeadStatus}
     for status, count in rows:
         counts[status.value] = count
 
-    return counts
+    return {"scope": effective_scope, "pipeline": counts}
+
+
+# ============================================================================
+# Mentions inbox (Dashboard V1 — "What's new for you" section)
+# ============================================================================
+
+
+@router.get("/mentions")
+async def get_mentions(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Unread mentions for the current user.
+
+    A mention exists iff:
+      - activity_comment.mentioned_user_ids contains current_user.id
+      - AND no row in activity_comment_reads matches (user_id, comment_id)
+
+    Returns the 20 most-recent unread mentions plus a count for the badge.
+    Each row carries enough context to render without a follow-up fetch:
+    comment text + author name + activity type + contact name.
+    """
+    # Read receipts for this user — subquery used in the NOT IN filter.
+    read_subq = select(ActivityCommentRead.comment_id).where(
+        ActivityCommentRead.user_id == current_user.id
+    )
+
+    stmt = (
+        select(ActivityComment)
+        .options(
+            selectinload(ActivityComment.user),
+            selectinload(ActivityComment.activity).selectinload(Activity.contact),
+        )
+        .where(
+            and_(
+                ActivityComment.mentioned_user_ids.any(current_user.id),
+                ActivityComment.id.notin_(read_subq),
+            )
+        )
+        .order_by(ActivityComment.created_at.desc())
+        .limit(20)
+    )
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    mentions = []
+    for c in rows:
+        author_name = c.user.full_name if c.user else None
+        contact = c.activity.contact if c.activity else None
+        contact_name = (
+            f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+            if contact else None
+        )
+        mentions.append({
+            "id": c.id,
+            "comment_text": c.text,
+            "author": {
+                "id": c.user_id,
+                "name": author_name,
+            },
+            "activity_id": c.activity_id,
+            "activity_type": c.activity.activity_type.value if c.activity else None,
+            "contact_id": contact.id if contact else None,
+            "contact_name": contact_name,
+            "created_at": c.created_at.isoformat(),
+        })
+
+    return {"mentions": mentions, "unread_count": len(mentions)}
+
+
+@router.patch("/mentions/{comment_id}/dismiss")
+async def dismiss_mention(
+    comment_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark a single mention as read. Idempotent — second call is a no-op."""
+    existing = await db.execute(
+        select(ActivityCommentRead).where(
+            ActivityCommentRead.user_id == current_user.id,
+            ActivityCommentRead.comment_id == comment_id,
+        )
+    )
+    if existing.scalar_one_or_none() is None:
+        db.add(ActivityCommentRead(
+            user_id=current_user.id,
+            comment_id=comment_id,
+        ))
+        await db.flush()
+    return {"comment_id": comment_id, "status": "dismissed"}
+
+
+# ============================================================================
+# AI Budget (legacy — still exposed but no longer surfaced on V1 dashboard)
+# ============================================================================
 
 
 @router.get("/ai-budget")
