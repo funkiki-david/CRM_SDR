@@ -140,14 +140,14 @@ async def init_db():
         {
             "email": "info@amazonsolutions.us",
             "password": "admin123",
-            "full_name": "David Admin",
+            "full_name": "Tech",
             "role": UserRole.ADMIN,
             "team": "Amazon Solutions",
         },
         {
             "email": "marketing@graphictac.biz",
             "password": "admin123",
-            "full_name": "David Marketing",
+            "full_name": "David",
             "role": UserRole.MANAGER,
             "team": "GT Marketing",
         },
@@ -165,14 +165,14 @@ async def init_db():
             "role": UserRole.MANAGER,
             "team": "GT Marketing",
         },
-        # Re-enabled 2026-05-12 per David. Shared login for the Alex/Amie pair
-        # ("Amie Alex" is the display name they prefer). Seed is idempotent, so
-        # this only creates the user on a fresh DB; the production row already
-        # exists with id=6 and is unaffected.
+        # Re-enabled 2026-05-12. Display name shortened to "Alex" per David's
+        # second-pass rename on the same day. Seed is idempotent, so this only
+        # creates the user on a fresh DB; the production row (id=6) was renamed
+        # via direct UPDATE and is unaffected by this seed.
         {
             "email": "Graphictac.usa@gmail.com",
             "password": "admin123",
-            "full_name": "Amie Alex",
+            "full_name": "Alex",
             "role": UserRole.MANAGER,
             "team": "GT Marketing",
         },
